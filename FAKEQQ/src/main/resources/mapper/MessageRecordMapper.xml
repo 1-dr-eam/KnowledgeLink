@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.liuyi.fateqq.mapper.MessageRecordMapper">
+    <!--
+         定义ResultMap - 核心配置
+         将数据库的下划线字段名映射到Java的驼峰属性名
+      -->
+    <resultMap id="MessageRecordMap" type="com.liuyi.fateqq.model.MessageRecord">
+        <id property="messageId" column="message_id"/>
+        <result property="fromUserId" column="from_user_id"/>
+        <result property="toUserId" column="to_user_id"/>
+        <result property="content" column="content"/>
+        <result property="sendTime" column="send_time"/>
+        <result property="isRead" column="is_read"/>
+        <result property="isImage" column="is_image"/>
+    </resultMap>
+
+    <!--插入消息    -->
+    <insert id="insertMessageRecord">
+        insert into message_record(message_id, from_user_id, to_user_id, content, send_time,is_read,is_image)
+        values (#{messageId}, #{fromUserId}, #{toUserId}, #{content}, #{sendTime},#{isRead},#{isImage})
+    </insert>
+
+    <!-- 根据两个用户ID查询他们之间的所有消息 -->
+    <select id="selectMessagesByUsers" resultMap="MessageRecordMap">
+        select * from message_record
+        where (
+        (from_user_id = #{user1} and to_user_id = #{user2})
+        or (from_user_id = #{user2} and to_user_id = #{user1})
+        )
+        order by send_time asc
+        <if test="limit != null and limit > 0">
+            limit #{limit}
+        </if>
+    </select>
+
+    <!-- 获取当前用户和好友之间最后一条聊天消息 -->
+    <select id="selectLastMessage" resultMap="MessageRecordMap">
+        SELECT * FROM message_record
+        WHERE (
+            (from_user_id = #{user1} AND to_user_id = #{user2})
+                OR (from_user_id = #{user2} AND to_user_id = #{user1})
+            )
+        ORDER BY send_time DESC
+        LIMIT 1
+    </select>
+    <!--通过ID查询消息-->
+    <select id="selectMessageById" resultMap="MessageRecordMap">
+        select * from message_record where message_id = #{messageId}
+    </select>
+    <!-- 获取所有有消息的好友列表 -->
+    <select id="selectFriendsWithMessages" resultType="java.lang.Integer">
+        SELECT DISTINCT from_user_id
+        FROM message_record
+        WHERE to_user_id = #{userId}
+        UNION
+        SELECT DISTINCT to_user_id
+        FROM message_record
+        WHERE from_user_id = #{userId}
+    </select>
+
+    <!-- 获取指定好友的未读消息 -->
+    <select id="selectUnreadMessages" resultMap="MessageRecordMap">
+        SELECT * FROM message_record
+        WHERE ((from_user_id = #{friendId} AND to_user_id = #{userId})
+            OR (from_user_id = #{userId} AND to_user_id = #{friendId}))
+          AND is_read = false
+        ORDER BY send_time ASC
+    </select>
+
+    <!-- 标记消息为已读 -->
+    <update id="markMessagesAsRead">
+        UPDATE message_record
+        SET is_read = true
+        WHERE to_user_id = #{userId} AND from_user_id = #{friendId} AND is_read = false
+    </update>
+
+    <!-- 获取有聊天记录的好友列表 -->
+    <select id="selectFriendsWithChatHistory" resultType="java.lang.Integer">
+        SELECT DISTINCT
+            CASE
+                WHEN from_user_id = #{userId} THEN to_user_id
+                ELSE from_user_id
+                END as friend_id
+        FROM message_record
+        WHERE from_user_id = #{userId} OR to_user_id = #{userId}
+        ORDER BY friend_id
+    </select>
+
+
+
+
+</mapper>

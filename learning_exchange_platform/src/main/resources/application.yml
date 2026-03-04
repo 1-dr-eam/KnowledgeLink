@@ -1,0 +1,29 @@
+#数据库连接池配置
+spring:
+  application:
+    name: learning_exchange_platform
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/learning_exchange_platform
+    username: root
+    password: Lcd200501060106
+  servlet:
+    multipart:
+      max-request-size: 100MB
+      max-file-size: 10MB
+  rabbitmq:
+    addresses: 127.0.0.1:5672
+    username: guest
+    password: guest
+    publisher-confirm-type: correlated
+    virtual-host: /
+#mybatis配置
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-locations: classpath:mapper/*.xml
+
+#事务管理日志
+logging:
+  level:
+    org.springframework.jdbc.support.JdbcTransactionManager: DEBUG

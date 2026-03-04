@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="learning_exchange_platform.mapper.ShoppingAddressMapper">
+    <insert id="insertShoppingAddress">
+        insert into shopping_address(user_id, shopping_address, label,default_flag) values (#{user_id}, #{shopping_address}, #{label},#{default_flag})
+    </insert>
+
+    <update id="updateShoppingAddress">
+        update shopping_address set shopping_address=#{shopping_address}, label=#{label},default_flag=#{default_flag} where id=#{id}
+    </update>
+
+    <delete id="deleteShoppingAddressById">
+        delete from shopping_address where id=#{id}
+    </delete>
+
+    <select id="selectShoppingAddressByUserId" resultType="learning_exchange_platform.model.ShoppingAddress">
+        select * from shopping_address where user_id=#{user_id}
+    </select>
+
+</mapper>

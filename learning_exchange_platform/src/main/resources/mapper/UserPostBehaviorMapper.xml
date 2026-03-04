@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="learning_exchange_platform.mapper.UserPostBehaviorMapper">
+
+    <!-- 插入用户行为 -->
+    <insert id="insertUserPostBehavior" parameterType="learning_exchange_platform.model.UserPostBehavior"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_behavior_post (user_id, post_id, behavior_type, behavior_time)
+        VALUES (#{user_id}, #{post_id}, #{behavior_type}, #{behavior_time})
+    </insert>
+
+    <!-- 更新浏览行为时间 -->
+    <update id="updateViewBehavior">
+        UPDATE user_behavior_post
+        SET behavior_time = #{behavior_time}
+        WHERE user_id = #{user_id}
+          AND post_id = #{post_id}
+          AND behavior_type = 1
+    </update>
+
+    <!-- 根据用户ID查询行为 -->
+    <select id="selectPostBehaviorByUserId" resultType="learning_exchange_platform.model.UserPostBehavior">
+        SELECT *
+        FROM user_behavior_post
+        WHERE user_id = #{user_id}
+    </select>
+
+    <!-- 根据用户和帖子查询行为 -->
+    <select id="selectByUserAndPost" resultType="learning_exchange_platform.model.UserPostBehavior">
+        SELECT *
+        FROM user_behavior_post
+        WHERE user_id = #{user_id} AND post_id = #{post_id}
+        ORDER BY behavior_type
+    </select>
+
+    <!-- 查询所有用户行为（用于协同过滤） -->
+    <select id="selectAllUserBehaviors" resultType="learning_exchange_platform.model.UserPostBehavior">
+        SELECT *
+        FROM user_behavior_post
+        ORDER BY user_id, post_id
+    </select>
+
+    <!-- 查询用户浏览过的帖子 -->
+    <select id="selectUserViewedPosts" resultType="learning_exchange_platform.model.Post">
+        SELECT p.*
+        FROM post p
+                 INNER JOIN user_behavior_post ub ON p.id = ub.post_id
+        WHERE ub.user_id = #{user_id}
+          AND ub.behavior_type = 1
+          AND (p.visible_range = '公开' OR p.visible_range IS NULL)
+        ORDER BY ub.behavior_time DESC
+    </select>
+
+    <!-- 查询用户点赞过的帖子 -->
+    <select id="selectUserLikedPosts" resultType="learning_exchange_platform.model.Post">
+        SELECT p.*
+        FROM post p
+                 INNER JOIN user_behavior_post ub ON p.id = ub.post_id
+        WHERE ub.user_id = #{user_id}
+          AND ub.behavior_type = 2
+          AND (p.visible_range = '公开' OR p.visible_range IS NULL)
+        ORDER BY ub.behavior_time DESC
+    </select>
+
+    <!-- 查询用户收藏过的帖子 -->
+    <select id="selectUserCollectedPosts" resultType="learning_exchange_platform.model.Post">
+        SELECT p.*
+        FROM post p
+                 INNER JOIN user_behavior_post ub ON p.id = ub.post_id
+        WHERE ub.user_id = #{user_id}
+          AND ub.behavior_type = 3
+          AND (p.visible_range = '公开' OR p.visible_range IS NULL)
+        ORDER BY ub.behavior_time DESC
+    </select>
+
+    <!-- 查询相似用户的行为（基于用户协同过滤） -->
+    <select id="selectSimilarUserBehaviors" resultType="learning_exchange_platform.model.UserPostBehavior">
+        SELECT ub.*
+        FROM user_behavior_post ub
+        WHERE ub.user_id IN (
+            SELECT DISTINCT ub2.user_id
+            FROM user_behavior_post ub1
+                     INNER JOIN user_behavior_post ub2 ON ub1.post_id = ub2.post_id
+            WHERE ub1.user_id = #{user_id}
+              AND ub2.user_id != #{user_id}
+            GROUP BY ub2.user_id
+            HAVING COUNT(DISTINCT ub2.post_id) > 2  -- 至少有两个共同交互的帖子
+        )
+          AND ub.post_id NOT IN (
+            SELECT post_id
+            FROM user_behavior_post
+            WHERE user_id = #{user_id}
+        )
+        ORDER BY ub.user_id, ub.behavior_time DESC
+    </select>
+
+    <!-- 查询用户最近的行为（带分页） -->
+    <select id="selectRecentBehaviors" resultType="learning_exchange_platform.model.UserPostBehavior">
+        SELECT id, user_id, post_id, behavior_type, behavior_time
+        FROM user_behavior_post
+        WHERE user_id = #{user_id}
+        ORDER BY behavior_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 统计用户行为数量 -->
+    <select id="countUserBehaviors" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM user_behavior_post
+        WHERE user_id = #{user_id}
+    </select>
+
+    <!-- 删除用户行为 -->
+    <delete id="deleteUserBehavior">
+        DELETE FROM user_behavior_post
+        WHERE user_id = #{user_id}
+          AND post_id = #{post_id}
+          AND behavior_type = #{behavior_type}
+    </delete>
+
+    <!-- 复杂查询：获取用户兴趣标签统计 -->
+    <select id="selectUserInterestTags" resultType="java.util.Map">
+        SELECT
+            p.subject as tag,
+            COUNT(*) as interaction_count,
+            SUM(CASE WHEN ub.behavior_type = 3 THEN 3
+                     WHEN ub.behavior_type = 2 THEN 2
+                     ELSE 1 END) as weighted_score
+        FROM user_behavior_post ub
+                 INNER JOIN post p ON ub.post_id = p.id
+        WHERE ub.user_id = #{user_id}
+          AND p.subject IS NOT NULL
+        GROUP BY p.subject
+        ORDER BY weighted_score DESC
+    </select>
+
+    <!-- 复杂查询：获取用户活跃时间段统计 -->
+    <select id="selectUserActiveTimeStats" resultType="java.util.Map">
+        SELECT
+            HOUR(FROM_UNIXTIME(behavior_time)) as hour,
+            COUNT(*) as behavior_count,
+            behavior_type
+        FROM user_behavior_post
+        WHERE user_id = #{user_id} AND behavior_time IS NOT NULL
+        GROUP BY HOUR(FROM_UNIXTIME(behavior_time)), behavior_type
+        ORDER BY hour
+    </select>
+
+    <select id="selectNavigateBehaviorByUserId" resultType="learning_exchange_platform.model.UserPostBehavior">
+        select * from user_behavior_post where behavior_type=1 and user_id=#{user_id}
+    </select>
+
+    <select id="selectUserPostBehaviorById" resultType="learning_exchange_platform.model.UserPostBehavior">
+        select * from user_behavior_post where id=#{id}
+    </select>
+
+</mapper>

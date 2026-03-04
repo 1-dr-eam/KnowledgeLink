@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="learning_exchange_platform.mapper.PostMapper">
+
+    <insert id="insertPost">
+        INSERT INTO post (user_id,title,publish_date, summary, content,author_name,author_avatar,label,cover_avatar ,type,visible_range,subject,sub_classify)
+        VALUES (#{user_id}, #{title}, #{publish_date}, #{summary}, #{content},#{author_name},#{author_avatar},#{label},#{cover_avatar},#{type},#{visible_range},#{subject},#{sub_classify})
+    </insert>
+
+    <delete id="deletePost">
+        delete from post where id=#{id}
+    </delete>
+
+    <update id="updatePost">
+        UPDATE post
+        SET
+            user_id = #{user_id},
+            title = #{title},
+            summary = #{summary},
+            content = #{content},
+            author_name = #{author_name},
+            author_avatar = #{author_avatar},
+            label = #{label},
+            cover_avatar = #{cover_avatar},
+            type = #{type},
+            visible_range = #{visible_range},
+            subject=#{subject},
+            sub_classify=#{sub_classify}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateCollectTitleById">
+        update collects set post_title=#{post_title} where post_id=#{post_id}
+    </update>
+
+    <update id="updateLikeTitleById">
+        update likes_post set post_title=#{post_title} where post_id=#{post_id}
+    </update>
+
+    <update id="updatePageViewsById">
+        update post set page_views=#{page_views} where id=#{id}
+    </update>
+
+    <select id="selectPostById" resultType="learning_exchange_platform.model.Post">
+        select * from post where id=#{id}
+    </select>
+
+    <select id="selectPostsByUserId" resultType="learning_exchange_platform.model.Post">
+        select * from post where user_id=#{user_id}
+    </select>
+
+    <select id="selectUserPostsByTimeAndKey" resultType="learning_exchange_platform.model.Post">
+        select * from post where user_id=#{user_id} and title like concat('%',#{searchKey},'%') order by publish_date desc
+    </select>
+
+    <select id="selectUserPostsByPageViewsAndKey" resultType="learning_exchange_platform.model.Post">
+        select * from post where user_id=#{user_id} and title like concat('%',#{searchKey},'%') order by page_views desc
+    </select>
+
+    <select id="selectPostsByLabelAndTime" resultType="learning_exchange_platform.model.Post">
+        select * from post where label=#{label} order by publish_date desc
+    </select>
+
+    <select id="selectPostsByLabelAndPageViews" resultType="learning_exchange_platform.model.Post">
+        select * from post where label=#{label} order by page_views desc
+    </select>
+
+    <select id="selectAllPosts" resultType="learning_exchange_platform.model.Post">
+        select * from post where visible_range='公开'
+    </select>
+
+    <select id="selectAllPostsByTime" resultType="learning_exchange_platform.model.Post">
+        select * from post where visible_range='公开' order by publish_date desc
+    </select>
+
+    <select id="selectAllPostsByPageViews" resultType="learning_exchange_platform.model.Post">
+        select * from post where visible_range='公开' order by page_views desc
+    </select>
+
+    <select id="selectPostsByLabel" resultType="learning_exchange_platform.model.Post">
+        select * from post where label=#{label} and visible_range='公开'
+    </select>
+
+    <select id="selectCollectedPostsByUserId" resultType="java.lang.Integer">
+        select post_id from collects where user_id=#{user_id} order by collect_date desc
+    </select>
+
+    <select id="selectPostsByIds" resultType="learning_exchange_platform.model.Post">
+        select * from post where visible_range = '公开' and id in
+        <foreach collection="post_ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <!--寻找内容相似帖子-->
+    <select id="selectContentSimilarPosts" resultType="learning_exchange_platform.model.Post">
+        SELECT * FROM post WHERE (visible_range = '公开' OR visible_range IS NULL)
+                             AND (subject = #{subject} OR sub_classify = #{sub_classify} or label=#{label})
+                             AND id != #{id} LIMIT #{limit}
+    </select>
+    <!--寻找主题相似帖子(帖子详情左侧)-->
+    <select id="selectTopicSimilarPosts" resultType="learning_exchange_platform.model.PostTitle">
+        SELECT id,title FROM post WHERE (visible_range = '公开' OR visible_range IS NULL)
+                                    AND (subject = #{subject} OR sub_classify = #{sub_classify})
+                                    AND id != #{id}
+        LIMIT 10
+    </select>
+    <!--寻找热门帖子（只考虑热度）-->
+    <select id="selectPopularPosts" resultType="learning_exchange_platform.model.Post">
+        SELECT * FROM post WHERE (visible_range = '公开' OR visible_range IS NULL)
+        ORDER BY (page_views/100.0 * 0.3 + like_count * 0.4 + collect_count * 0.3) DESC
+        LIMIT #{limit}
+    </select>
+    <!--寻找最新帖子（只考虑时间）-->
+    <select id="selectLatestPosts" resultType="learning_exchange_platform.model.Post">
+        SELECT * FROM post WHERE (visible_range = '公开' OR visible_range IS NULL) ORDER BY publish_date DESC LIMIT #{limit}
+    </select>
+
+    <select id="selectPostLabelById" resultType="java.lang.String">
+        select label from post where id=#{id}
+    </select>
+
+    <select id="selectPopularTopics" resultType="learning_exchange_platform.model.PostTitle">
+        select id,title from post
+        WHERE publish_date >= DATE_SUB(CURDATE(), INTERVAL 2 YEAR) and visible_range = '公开'
+        order by (page_views/50.0 * 0.4 + comment_count*0.3 + like_count * 0.15+ collect_count*0.15) desc
+        limit 10
+    </select>
+
+    <select id="selectPostLabels" resultType="java.lang.String">
+        select label from post where visible_range = '公开' group by label;
+    </select>
+
+    <select id="selectPostClassifies" resultType="java.lang.String">
+        select sub_classify from post where visible_range = '公开' group by sub_classify;
+    </select>
+
+    <select id="selectPostsBySubClassify" resultType="learning_exchange_platform.model.Post">
+        select * from post where sub_classify=#{sub_classify}
+    </select>
+
+    <select id="selectUserPostsByTime" resultType="learning_exchange_platform.model.Post">
+        select * from post where user_id=#{user_id} order by publish_date desc
+    </select>
+
+    <select id="selectUserPostsByPageViews" resultType="learning_exchange_platform.model.Post">
+        select * from post where user_id=#{user_id} order by page_views desc
+    </select>
+
+
+</mapper>
