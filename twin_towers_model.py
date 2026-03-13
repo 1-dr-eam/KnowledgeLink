@@ -8,81 +8,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score, recall_score
 from collections import defaultdict
 import random
+from feature_processor import FeatureProcessor
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ----------------------------
-# 1. 数据预处理类
-# ----------------------------
-class FeatureProcessor:
-    """
-    将原始的、异构的用户和物品特征（包括 ID、离散类别、连续数值）统一转换为模型可接受的张量格式。
-    """
-    def __init__(self):
-        self.user_id_vocab = {}  # user_id → index
-        self.item_id_vocab = {}  # item_id → index
-        self.user_discrete_vocab = defaultdict(dict)  # {某个离散特征col_name: {离散特征值value: 对应索引index}}
-        self.item_discrete_vocab = defaultdict(dict)  # 存储离散特征的映射关系
-        self.user_scaler = StandardScaler()  # 用于用户连续特征
-        self.item_scaler = StandardScaler()  # 用于物品连续特征
-
-    def build_vocab_and_scale(self, df_train, user_discrete_cols, item_discrete_cols,
-                              user_continuous_cols, item_continuous_cols):
-        """
-        构建词典与拟合归一化器
-        :param df_train:训练集 DataFrame
-        :param user_discrete_cols:用户离散特征列
-        :param item_discrete_cols:物品离散特征列
-        :param user_continuous_cols:用户连线特征列
-        :param item_continuous_cols:物品连续特征列
-        """
-        # 构建用户ID映射
-        all_user_ids = set(df_train['user_id'])
-        self.user_id_vocab = {uid: i for i, uid in enumerate(all_user_ids)} # {id:index}比如把749464映射为0(索引从0开始)
-
-        # 构建物品ID映射
-        all_item_ids = set(df_train['item_id'])
-        self.item_id_vocab = {iid: i for i, iid in enumerate(all_item_ids)}
-
-        # 构建离散特征映射
-        for col in user_discrete_cols:
-            unique_vals = set(df_train[col].values) # set去重
-            self.user_discrete_vocab[col] = {val: i for i, val in enumerate(unique_vals)}
-
-        for col in item_discrete_cols:
-            unique_vals = set(df_train[col].values)
-            self.item_discrete_vocab[col] = {val: i for i, val in enumerate(unique_vals)}
-
-        # 拟合连续特征标准化器
-        self.user_scaler.fit(df_train[user_continuous_cols].values) # fit只记录均值和标准差
-        self.item_scaler.fit(df_train[item_continuous_cols].values)
-
-    def transform_user_features(self, df_batch, user_discrete_cols, user_continuous_cols):
-        # ID 特征
-        user_ids = torch.tensor([self.user_id_vocab.get(x, 0) for x in df_batch['user_id']]) # id映射为索引
-        # 离散特征
-        user_discrete = torch.stack([
-            torch.tensor([self.user_discrete_vocab[col].get(x, 0) for x in df_batch[col]]) # 离散特征值映射为索引
-            for col in user_discrete_cols
-        ], dim=1)
-        # 连续特征归一化(均值为0，方差为1)
-        user_continuous = torch.tensor(self.user_scaler.transform(df_batch[user_continuous_cols].values),
-                                       dtype=torch.float32)
-        return user_ids, user_discrete, user_continuous
-
-    def transform_item_features(self, df_batch, item_discrete_cols, item_continuous_cols):
-        item_ids = torch.tensor([self.item_id_vocab.get(x, 0) for x in df_batch['item_id']])
-        item_discrete = torch.stack([
-            torch.tensor([self.item_discrete_vocab[col].get(x, 0) for x in df_batch[col]])
-            for col in item_discrete_cols
-        ], dim=1)
-        item_continuous = torch.tensor(self.item_scaler.transform(df_batch[item_continuous_cols].values),
-                                       dtype=torch.float32)
-        return item_ids, item_discrete, item_continuous
-
-
-# ----------------------------
-# 2. 模型定义
+# 双塔模型
 # ----------------------------
 class TwoTowerModel(nn.Module):
     def __init__(self, n_users, n_items, user_discrete_sizes, item_discrete_sizes,
@@ -180,7 +111,7 @@ class TwoTowerModel(nn.Module):
 
 
 # ----------------------------
-# 3. 数据集类（支持负采样 1:2）
+# 数据集类（支持负采样 1:2）
 # ----------------------------
 class TwoTowerDataset(Dataset):
     def __init__(self, df_all, processor, user_discrete_cols, item_discrete_cols,
@@ -265,7 +196,7 @@ def collate_fn(batch):
 
 
 # ----------------------------
-# 4. 训练与评估
+# 训练与评估
 # ----------------------------
 def evaluate_recall_at_k(model, df_val, processor, user_meta_df, item_meta_df,
                          user_discrete_cols, user_continuous_cols,
