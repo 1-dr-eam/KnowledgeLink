@@ -55,8 +55,7 @@ class TwoTowerDataset(Dataset):
         }
 
 class ThreeTowerDataset(Dataset):
-    """三塔模型数据集"""
-
+    """三塔模型数据集(精排中的多目标模型复用)"""
     def __init__(self, df, processor,
                  user_discrete_cols, item_discrete_cols,
                  scene_discrete_cols, user_cont_cols, item_cont_cols, stat_cont_cols,

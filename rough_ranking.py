@@ -8,6 +8,8 @@ from feature_processor import FeatureProcessor
 from utils import collate_fn_three_towers
 from dataset import ThreeTowerDataset
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # ---------------------
 # 三塔模型
 # ---------------------
@@ -83,7 +85,7 @@ class ThreeTowerModel(nn.Module):
         for i in range(user_discrete.size(1)):
             emb = self.user_discrete_embeds[i](user_discrete[:, i]) # 取一整列，即某个离散特征的所有值，一次性embedding
             user_emb_list.append(emb)
-        user_emb_list.append(user_continuous) # 连续特征已在FeatureProcessor中进行过归一化
+        user_emb_list.extend(user_continuous) # 连续特征已在FeatureProcessor中进行过归一化
 
         scene_emb_list=[]
         for i in range(scene_discrete.size(1)):
@@ -217,7 +219,6 @@ def train_three_tower_model():
     # ========= 6. 训练配置 =========
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     criterion = nn.CrossEntropyLoss()  # 交叉熵损失
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     # ========= 7. 训练循环 =========
