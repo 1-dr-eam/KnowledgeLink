@@ -1,4 +1,5 @@
 import math
+import string
 from collections import defaultdict,deque
 from heapq import nlargest
 import random
@@ -59,15 +60,15 @@ class ItemCF:
 
         print("ItemCF training completed.")
 
-    def recommend(self, user, n_rec=50):
+    def itemCF_recommend(self, user_id, n_rec=50):
         """
         推荐时考虑用户对历史物品的评分强度
         score(j) = sum_{i in hist} r_ui * sim(i, j)
         """
-        if user not in self.user_items_rating:
+        if user_id not in self.user_items_rating:
             return []
 
-        user_hist = self.user_items_rating[user]  # {item: rating}
+        user_hist = self.user_items_rating[user_id]  # {item: rating}
         item_scores = defaultdict(float) # # {item: score}
 
         for item_i, r_ui in user_hist.items():
@@ -75,14 +76,14 @@ class ItemCF:
                 continue
             top_neighbors = self.item_sim[item_i]
 
-            for item_j, sim_score in top_neighbors:
+            for item_j, sim_score in top_neighbors.items():
                 if item_j in user_hist:
                     continue  # 不推荐已交互过的
                 item_scores[item_j] += r_ui * sim_score  # 加权累加，用户对某物品的交互等级*物品与物品的相似度
 
         recs = nlargest(n_rec, item_scores.items(), key=lambda x: x[1]) # [(item:final_score)]
         res = [x[0] for x in recs]
-        return res # 只返回物品ID列表
+        return set(res) # 只返回物品ID集合
 
 class UserCF:
     def __init__(self):
@@ -130,23 +131,23 @@ class UserCF:
 
         print("UserCF training completed.")
 
-    def recommend(self, user, n_rec=50):
+    def userCF_recommend(self, user_id, n_rec=50):
         """
         为用户推荐物品
         :param user: 目标用户ID
         :param n_rec: 推荐 top-N 物品
-        :return: List of (item, score)
+        :return: set of item_id
         """
-        if user not in self.user_items_rating:
+        if user_id not in self.user_items_rating:
             return []
 
-        user_hist = set(self.user_items_rating[user].keys())
+        user_hist = set(self.user_items_rating[user_id].keys())
         item_scores = defaultdict(float) # {item:score}
 
         # 获取最相似的 top_k_sim_users 个用户
-        if user not in self.user_top_sim:
+        if user_id not in self.user_top_sim:
             return []
-        sim_users = self.user_top_sim[user] # {users:scores}
+        sim_users = self.user_top_sim[user_id] # {users:scores}
         # 遍历每个相似用户 v
         for v, sim_uv in sim_users.items():
             # 遍历 v 交互过但 user 未交互的物品
@@ -159,8 +160,24 @@ class UserCF:
         # 返回 top-n_rec
         recs = nlargest(n_rec, item_scores.items(), key=lambda x: x[1])
         res=[x[0] for x in recs]
-        return res
+        return set(res)
 
+class CFRecommender:
+    """
+    封装类，封装两种协同过滤召回方法
+    """
+    def __init__(self):
+        self.user_cf=UserCF()
+        self.item_cf=ItemCF()
+
+    def fit(self, user_item_rating_list,top_k=10):
+        self.user_cf.fit(user_item_rating_list,top_k)
+        self.item_cf.fit(user_item_rating_list,top_k)
+
+    def cf_recommend(self, user_id, n_rec=50):
+        user_cf_recalls=self.user_cf.userCF_recommend(user_id, n_rec)
+        item_cf_recalls=self.item_cf.itemCF_recommend(user_id, n_rec)
+        return user_cf_recalls.union(item_cf_recalls)
 
 class Note:
     """笔记类，表示系统中的内容项"""
@@ -181,7 +198,6 @@ class Note:
         self.keywords = keywords
         self.created_time = created_time
         self.content_feature = content_feature
-
 
 class UserProfile:
     """用户画像类"""
@@ -279,9 +295,9 @@ class ClassificationRecommender:
         # 去重并返回
         return set(recalled_notes)
 
-    def cold_start_recommend(self, user_profile, topk_per_channel=10):
+    def classification_recommend(self, user_profile, topk_per_channel=10):
         """
-        冷启动推荐主函数
+        基于类别的推荐主函数
         Args:
             user_profile: 用户画像对象
             topk_per_channel: 每个召回通道返回的笔记数量
@@ -301,137 +317,6 @@ class ClassificationRecommender:
         # 合并召回结果（去重）
         return category_recalled.union(keyword_recalled)
 
-
-def generate_mock_data_classfication():
-    """生成模拟数据"""
-    # 创建一些模拟笔记
-    notes = []
-    fake=Faker()
-    # 模拟的类目和关键词
-    categories_list = [
-        ["科技", "人工智能"],
-        ["生活", "美食"],
-        ["旅行", "摄影"],
-        ["教育", "学习"],
-        ["娱乐", "电影"],
-        ["健康", "运动"],
-        ["财经", "投资"],
-        ["时尚", "美妆"]
-    ]
-
-    keywords_list = [
-        ["AI", "机器学习", "深度学习"],
-        ["烹饪", "菜谱", "美食"],
-        ["旅游攻略", "景点推荐", "摄影技巧"],
-        ["考试", "学习方法", "知识分享"],
-        ["电影推荐", "影评", "娱乐八卦"],
-        ["健身", "减肥", "营养"],
-        ["股票", "基金", "理财"],
-        ["护肤", "化妆", "穿搭"]
-    ]
-
-    for i in range(100):
-        # 随机选择类目和关键词
-        categories = random.sample(categories_list[random.randint(0, len(categories_list) - 1)],
-                                   min(2, len(categories_list[random.randint(0, len(categories_list) - 1)])))
-        keywords = random.sample(keywords_list[random.randint(0, len(keywords_list) - 1)],
-                                 min(3, len(keywords_list[random.randint(0, len(keywords_list) - 1)])))
-
-        title = f"笔记{i}: {' '.join(categories[:1])}相关内容"
-        note = Note(
-            note_id=i,
-            title=title,
-            categories=categories,
-            keywords=keywords,
-            created_time=fake.date(),
-            content_feature=None
-        )
-        notes.append(note)
-
-    return notes
-
-
-def demo_cold_start_system():
-    """演示冷启动召回系统"""
-    print("开始演示冷启动召回系统...\n")
-
-    # ========= 1. 初始化推荐系统 =========
-    recommender = ClassificationRecommender()
-
-    # ========= 2. 添加模拟笔记数据 =========
-    print("1. 添加模拟笔记数据...")
-    notes = generate_mock_data_classfication()
-    for note in notes:
-        recommender.add_note(note)
-
-    # 构建索引
-    recommender.build_indices()
-    print(f"添加了 {len(notes)} 个笔记\n")
-
-    # ========= 3. 创建用户画像 =========
-    print("2. 创建用户画像...")
-    user_profile = UserProfile(
-        user_id="user_123",
-        categories=["科技", "人工智能", "机器学习"],  # 用户感兴趣的类目
-        keywords=["AI", "深度学习", "编程"]  # 用户感兴趣的关键词
-    )
-
-    print(f"用户ID: {user_profile.user_id}")
-    print(f"感兴趣类目: {user_profile.categories}")
-    print(f"感兴趣关键词: {user_profile.keywords}\n")
-
-    # ========= 4. 执行冷启动推荐 =========
-    print("3. 执行冷启动推荐...")
-    recall_pool = recommender.cold_start_recommend(
-        user_profile=user_profile,
-        topk_per_channel=5  # 每个通道召回5个
-    )
-
-    print(f"召回池中共有 {len(recall_pool)} 个笔记\n")
-
-    # ========= 5. 显示召回结果 =========
-    print("4. 召回结果详情:")
-    print("-" * 80)
-    print(f"{'排名':<4} {'笔记ID':<10} {'标题':<20} {'类目':<15} {'关键词':<20} {'创建时间':<12}")
-    print("-" * 80)
-
-    # 按创建时间倒序显示（最近的在前面）
-    sorted_recall_pool = sorted(recall_pool, key=lambda x: x.created_time, reverse=True)
-
-    for i, note in enumerate(sorted_recall_pool, 1):
-        categories_str = ", ".join(note.categories[:2])  # 只显示前2个类目
-        keywords_str = ", ".join(note.keywords[:3])  # 只显示前3个关键词
-        time_str = note.created_time
-
-        print(f"{i:<4} {note.note_id:<10} {note.title[:18]:<20} {categories_str:<15} {keywords_str:<20} {time_str:<12}")
-
-    print("-" * 80)
-
-    # ========= 6. 分析召回通道贡献 =========
-    print(f"\n5. 召回通道分析:")
-
-    # 单独计算每个通道的召回结果
-    category_recalled = recommender.category_recall(user_profile.categories, topk=5)
-    keyword_recalled = recommender.keyword_recall(user_profile.keywords, topk=5)
-
-    print(f"类目召回数量: {len(category_recalled)}")
-    print(f"关键词召回数量: {len(keyword_recalled)}")
-    print(f"合并后召回数量: {len(recall_pool)} (可能存在重复)")
-
-    # 计算交集
-    category_ids = {note.note_id for note in category_recalled}
-    keyword_ids = {note.note_id for note in keyword_recalled}
-    intersection = category_ids.intersection(keyword_ids)
-    print(f"两个通道共同召回的数量: {len(intersection)}")
-
-    print(f"\n冷启动召回系统执行完成！")
-    print("系统特点:")
-    print("- 支持类目召回和关键词召回双通道")
-    print("- 索引按创建时间倒序排列")
-    print("- 自动去重合并召回结果")
-    print("- 适用于新用户冷启动场景")
-
-
 class ClusteringRecommender:
     """基于聚类的推荐系统"""
     def __init__(self, n_clusters=100):
@@ -450,7 +335,7 @@ class ClusteringRecommender:
         self.note_ids = []  # 笔记ID列表，与特征向量顺序一致
 
     def add_note(self, note):
-        """添加单条笔记到系统"""
+        """添加单条笔记"""
         self.notes_map[note.note_id] = note
         self.all_note_features.append(note.content_feature)
         self.note_ids.append(note.note_id)
@@ -474,8 +359,6 @@ class ClusteringRecommender:
             note_id = self.note_ids[i] # 取出id
             note = self.notes_map[note_id] # 取出笔记对象
             self.notes_by_cluster[label].append(note)
-
-        print(f"完成聚类，共{self.n_clusters}个聚类，包含{len(self.notes_map)}篇笔记")
 
     def get_nearest_cluster(self, seed_note):
         """
@@ -527,7 +410,7 @@ class ClusteringRecommender:
         similar_notes = [item[0] for item in similarities[:m]]
         return similar_notes
 
-    def cluster_based_recall(self, user_profile, last_n=5, m=10)->set[Note]:
+    def clustering_recommend(self, user_profile, last_n=20, m=10)->set[Note]:
         """
         基于聚类的召回方法
         Args:
@@ -569,134 +452,181 @@ class ClusteringRecommender:
 
         return recalled_notes
 
+class ColdStartRecommender:
+    """
+    封装类，封装用于冷启动的类目召回，关键词召回和内容向量聚类召回
+    """
+    def __init__(self,user_profile, notes,n_clusters=100):
+        self.notes = notes
+        self.user_profile = user_profile
+        self.clustering_recommender = ClusteringRecommender(n_clusters=n_clusters)
+        self.classification_recommender = ClassificationRecommender()
 
-def generate_mock_data(n_notes=1000, feature_dim=128):
-    """生成模拟笔记数据"""
+    def fit(self):
+        # 数据准备
+        for note in self.notes:
+            self.clustering_recommender.add_note(note)
+            self.classification_recommender.add_note(note)
+        # 聚类
+        self.clustering_recommender.fit_clustering()
+        # 类目和关键词
+        self.classification_recommender.build_indices()
+
+    def cold_start_recommend(self)->set[Note]:
+        # 聚类
+        clustering_recalls=self.clustering_recommender.clustering_recommend(user_profile=self.user_profile, last_n=50, m=10)
+        # 类目和关键词
+        classification_recalls=self.classification_recommender.classification_recommend(user_profile=self.user_profile,topk_per_channel=50)
+        # 合并去重
+        return classification_recalls.union(clustering_recalls)
+
+def generate_mock_data(notes_number=100):
+    """生成模拟数据"""
+    # 创建一些模拟笔记
     notes = []
+    fake=Faker()
+    # 模拟的类目和关键词
+    categories_list = [
+        ["科技", "人工智能"],
+        ["生活", "美食"],
+        ["旅行", "摄影"],
+        ["教育", "学习"],
+        ["娱乐", "电影"],
+        ["健康", "运动"],
+        ["财经", "投资"],
+        ["时尚", "美妆"]
+    ]
 
-    for i in range(n_notes):
+    keywords_list = [
+        ["AI", "机器学习", "深度学习"],
+        ["烹饪", "菜谱", "美食"],
+        ["旅游攻略", "景点推荐", "摄影技巧"],
+        ["考试", "学习方法", "知识分享"],
+        ["电影推荐", "影评", "娱乐八卦"],
+        ["健身", "减肥", "营养"],
+        ["股票", "基金", "理财"],
+        ["护肤", "化妆", "穿搭"]
+    ]
+
+    for i in range(notes_number):
+        # 随机选择类目和关键词
+        categories = random.sample(categories_list[random.randint(0, len(categories_list) - 1)],
+                                   min(2, len(categories_list[random.randint(0, len(categories_list) - 1)])))
+        keywords = random.sample(keywords_list[random.randint(0, len(keywords_list) - 1)],
+                                 min(3, len(keywords_list[random.randint(0, len(keywords_list) - 1)])))
+
         # 生成随机特征向量（模拟图像+文本特征的拼接）
-        feature_vector = np.random.randn(feature_dim).astype(np.float32)
+        feature_vector = np.random.randn(256).astype(np.float32)
         # 归一化特征向量（便于余弦相似度计算）
         feature_vector = feature_vector / np.linalg.norm(feature_vector)
-
-        title = f"笔记{i}: 主题内容示例"
+        title = f"笔记{i}: {' '.join(categories[:1])}相关内容"
         note = Note(
             note_id=i,
             title=title,
-            content_feature=feature_vector,
-            categories=None,
-            keywords=None,
-            created_time=None
+            categories=categories,
+            keywords=keywords,
+            created_time=fake.date(),
+            content_feature=feature_vector
         )
         notes.append(note)
 
     return notes
 
 
-def demo_clustering_based_recommendation():
-    """演示基于聚类的推荐系统"""
-    print("开始演示基于聚类的推荐系统...\n")
+# 定义可能的类目和关键词池
+CATEGORIES_POOL = [
+    "科技", "人工智能", "机器学习", "深度学习", "数据科学", "编程", "软件开发",
+    "互联网", "移动应用", "前端开发", "后端开发", "云计算", "大数据", "区块链",
+    "物联网", "网络安全", "游戏开发", "虚拟现实", "增强现实", "机器人技术",
+    "电子商务", "社交媒体", "数字营销", "产品管理", "用户体验", "界面设计",
+    "创业", "投资", "金融科技", "生物科技", "医疗健康", "教育科技"
+]
 
-    # ========= 1. 生成模拟数据 =========
-    print("1. 生成模拟笔记数据...")
-    notes = generate_mock_data(n_notes=500, feature_dim=128)
-    print(f"生成了 {len(notes)} 个笔记，每个笔记特征维度: {len(notes[0].content_feature)}\n")
+KEYWORDS_POOL = [
+    "AI", "深度学习", "编程", "Python", "Java", "JavaScript", "React", "Vue",
+    "Node.js", "Django", "Flask", "TensorFlow", "PyTorch", "机器学习", "数据分析",
+    "云计算", "AWS", "Azure", "Docker", "Kubernetes", "区块链", "比特币",
+    "以太坊", "智能合约", "物联网", "5G", "边缘计算", "大数据", "Hadoop",
+    "Spark", "SQL", "NoSQL", "MongoDB", "Redis", "网络安全", "加密",
+    "UI设计", "UX设计", "产品经理", "敏捷开发", "DevOps", "测试", "自动化"
+]
 
-    # ========= 2. 初始化推荐系统 =========
-    print("2. 初始化推荐系统...")
-    recommender = ClusteringRecommender(n_clusters=100)
 
-    # 添加笔记到系统
-    for note in notes:
-        recommender.add_note(note)
+def generate_random_user_profile(index):
+    """
+    生成随机用户画像
+    """
+    # 生成随机的user_id
+    user_id = f"user_{index:03d}_{''.join(random.choices(string.ascii_lowercase + string.digits, k=4))}"
 
-    print(f"添加了 {len(recommender.notes_map)} 个笔记到系统\n")
+    # 随机选择2-5个类目
+    num_categories = random.randint(2, 5)
+    categories = random.sample(CATEGORIES_POOL, min(num_categories, len(CATEGORIES_POOL)))
 
-    # ========= 3. 训练聚类模型 =========
-    print("3. 训练聚类模型...")
-    recommender.fit_clustering()
+    # 随机选择3-7个关键词
+    num_keywords = random.randint(3, 7)
+    keywords = random.sample(KEYWORDS_POOL, min(num_keywords, len(KEYWORDS_POOL)))
 
-    # ========= 4. 创建用户画像并添加交互历史 =========
-    print("\n4. 创建用户画像并添加交互历史...")
-    user_profile = UserProfile(user_id="user_123", max_history=20)
-
-    # 随机选择一些笔记作为用户的历史交互
-    interaction_note_ids = random.sample(list(recommender.notes_map.keys()), 10)
-    for note_id in interaction_note_ids:
-        user_profile.add_interaction(note_id)
-
-    print(f"用户 {user_profile.user_id} 的交互历史: {interaction_note_ids[:5]}...")  # 只显示前5个
-    print(f"共记录了 {len(user_profile.interaction_history)} 次交互\n")
-
-    # ========= 5. 执行基于聚类的召回 =========
-    print("5. 执行基于聚类的召回...")
-    recalled_notes = recommender.cluster_based_recall(
-        user_profile=user_profile,
-        last_n=5,  # 使用最近5次交互
-        m=8  # 每个种子召回8篇笔记
+    return UserProfile(
+        user_id=user_id,
+        categories=categories,
+        keywords=keywords,
+        max_history=50
     )
 
-    print(f"召回了 {len(recalled_notes)} 篇笔记\n")
+def main():
+    """召回系统"""
+    print("开始演示冷启动召回系统...\n")
+    # =============== 数据准备 ==================
+    # 1000条笔记
+    notes=generate_mock_data(1000)
+    # 生成100个随机用户画像
+    user_profiles = [generate_random_user_profile(i) for i in range(1, 101)]
+    # 对于每一个用户，生成10条随机交互记录
+    user_item_rating_list=[]
+    for user_profile in user_profiles:
+        for i in range(20):
+            note_id = random.randint(0,1000)
+            ranking = random.randint(1,4)
+            user_profile.add_interaction(note_id)
+            user_item_rating_list.append((user_profile.user_id, note_id, ranking))
+    # 给第一个用户做推荐
+    user_profile=user_profiles[0]
+    # =============== 协同过滤推荐 ================
+    cf_recommender = CFRecommender()
+    cf_recommender.fit(user_item_rating_list,10)
+    cf_recall_notes_ids=cf_recommender.cf_recommend(user_profile.user_id,50)
+    cf_recall_notes=set([notes[id] for id in cf_recall_notes_ids])
+    print("cf_recall:",len(cf_recall_notes))
+    # ===============  冷启动推荐  ===============
+    cold_start_recommender = ColdStartRecommender(user_profile, notes,50)
+    cold_start_recommender.fit()
+    cold_recall_notes=cold_start_recommender.cold_start_recommend()
+    print("cold_recall:",len(cold_recall_notes))
+    # 合并去重
+    recall_notes=cf_recall_notes.union(cold_recall_notes)
+    # ========= 显示召回结果 =========
+    print(f"用户ID: {user_profile.user_id}")
+    print(f"感兴趣类目: {user_profile.categories}")
+    print(f"感兴趣关键词: {user_profile.keywords}\n")
+    print(f"召回池中共有 {len(recall_notes)} 个笔记\n")
 
-    # ========= 6. 显示召回结果 =========
-    print("6. 召回结果详情:")
+
     print("-" * 80)
-    print(f"{'排名':<4} {'笔记ID':<12} {'标题':<30} {'特征向量前5维':<25}")
+    print(f"{'排名':<4} {'笔记ID':<10} {'标题':<20} {'类目':<15} {'关键词':<20} {'创建时间':<12}")
     print("-" * 80)
 
-    for i, note in enumerate(list(recalled_notes)[:20], 1):  # 只显示前20个
-        feature_preview = str(note.content_feature[:5]).replace('\n', '')[:23] + "..."
-        print(f"{i:<4} {note.note_id:<12} {note.title[:28]:<30} {feature_preview:<25}")
+    # 按创建时间倒序显示（最近的在前面）
+    sorted_recall_pool = sorted(recall_notes, key=lambda x: x.created_time, reverse=True)
 
-    if len(recalled_notes) > 20:
-        print(f"... 还有 {len(recalled_notes) - 20} 篇笔记")
+    for i, note in enumerate(sorted_recall_pool, 1):
+        categories_str = ", ".join(note.categories[:2])  # 只显示前2个类目
+        keywords_str = ", ".join(note.keywords[:3])  # 只显示前3个关键词
+        time_str = note.created_time
+
+        print(f"{i:<4} {note.note_id:<10} {note.title[:18]:<20} {categories_str:<15} {keywords_str:<20} {time_str:<12}")
 
     print("-" * 80)
-
-    # ========= 7. 分析召回效果 =========
-    print(f"\n7. 召回效果分析:")
-    print(f"总召回数量: {len(recalled_notes)}")
-
-    # 计算召回的聚类分布
-    clusters_for_recall = []
-    recent_note_ids = user_profile.get_last_n_interactions(5)
-
-    for note_id in recent_note_ids:
-        if note_id in recommender.notes_map:
-            seed_note = recommender.notes_map[note_id]
-            cluster_idx = recommender.get_nearest_cluster(seed_note)
-            clusters_for_recall.append(cluster_idx)
-
-    unique_clusters = set(clusters_for_recall)
-    print(f"涉及的聚类数量: {len(unique_clusters)}")
-    print(f"种子笔记所在聚类: {clusters_for_recall}")
-
-    # 计算平均相似度（示例）
-    if recalled_notes and recent_note_ids:
-        avg_similarity = 0
-        similarity_count = 0
-
-        # 选择一个种子笔记作为代表
-        seed_note_id = recent_note_ids[0]
-        seed_note = recommender.notes_map[seed_note_id]
-
-        for note in list(recalled_notes)[:5]:  # 只计算前5个的平均相似度
-            sim = cosine_similarity([seed_note.content_feature], [note.content_feature])[0][0]
-            avg_similarity += sim
-            similarity_count += 1
-
-        if similarity_count > 0:
-            avg_similarity /= similarity_count
-            print(f"种子笔记与召回笔记的平均相似度: {avg_similarity:.4f}")
-
-    print(f"\n基于聚类的推荐系统执行完成！")
-    print("系统特点:")
-    print("- 使用K-Means聚类算法组织笔记")
-    print("- 基于余弦相似度计算相似度")
-    print("- 利用用户历史交互进行个性化召回")
-    print("- 支持高效的相似笔记发现")
-
 
 if __name__ == "__main__":
-    demo_clustering_based_recommendation()
+    main()
