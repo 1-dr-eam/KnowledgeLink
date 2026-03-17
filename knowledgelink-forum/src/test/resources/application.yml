@@ -1,0 +1,23 @@
+spring:
+  cloud:
+    nacos:
+      enabled: false
+      config:
+        enabled: false
+      discovery:
+        enabled: false
+test:
+  dashscope:
+    integration:
+      enabled: true
+
+dashscope:
+  image:
+    apiKey: sk-98ff5ef4ab644997af365d6598bc36c3
+    baseUrl: https://dashscope.aliyuncs.com/api/v1
+    model: qwen-image-2.0-pro
+    n: 1
+    size: 1664*928
+    negativePrompt:
+    promptExtend: true
+    watermark: false

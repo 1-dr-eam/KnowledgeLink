@@ -1,0 +1,51 @@
+server:
+  port: 8085
+  servlet:
+    context-path: /forum
+
+# 应用名称
+spring:
+  application:
+    name: book
+  servlet:
+    # 文件上传配置信息
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB  #整体文件最大请求限制
+
+dashscope:
+  image:
+    apiKey: sk-98ff5ef4ab644997af365d6598bc36c3
+    baseUrl: https://dashscope.aliyuncs.com/api/v1
+    model: qwen-image-2.0-pro
+    n: 1
+    size: 1664*928
+    negativePrompt:
+    promptExtend: true
+    watermark: false
+
+# 日志配置
+logging:
+  charset:
+    console: UTF-8
+    file: UTF-8
+  level:
+    com.github.forum: debug
+  file:
+    name: logs/KnowledgeLink-forum.log
+  logback:
+    rolling policy:
+      max-file-size: 10MB
+      max-history: 360
+      total-size-cap: 1GB
+      clean-history-on-start: false
+
+tencent:
+  cos:
+    secret-id: AKIDwPipmXegXFyWt56xc6RbaO0Umt22rUxG
+    secret-key: GLFg086sSo25xZ2A8ygBTYTCj5HMH2rh
+    region: ap-nanjing
+    bucket-name: ningning-1402906498
+    url: https://ningning-1402906498.cos.ap-nanjing.myqcloud.com
+
+

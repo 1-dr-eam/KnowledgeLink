@@ -1,0 +1,55 @@
+server:
+  port: 8081
+  servlet:
+    context-path: /trade
+
+# 应用名称
+spring:
+  application:
+    name: book
+  servlet:
+    # 文件上传配置信息
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB  #整体文件最大请求限制
+
+# 日志配置
+logging:
+  charset:
+    console: UTF-8
+    file: UTF-8
+  level:
+    com.github.trade: debug
+  file:
+    name: logs/KnowledgeLink-trade.log
+  logback:
+    rolling policy:
+      max-file-size: 10MB
+      max-history: 360
+      total-size-cap: 1GB
+      clean-history-on-start: false
+
+
+
+
+
+
+# 支付宝配置
+alipay:
+  appId: 9021000156659694
+  merchantPrivateKey: MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCeovlcSikdQY+vdsTjzDutby+ECPt8VxPr2u9CixwHUD0VvcvtiZhbErK+o0ECiwHMuau1u5WrClfkthv+9D8YF04LdGOpsgiggiPntGd1u9JJ2wy3tSalEFgxD8WXzWcLeTXjNxDZTxDRjQLsobkaOCysQnU6Xnprxmr+ajg7d4TNoGYJq+YByEJOKU9ZjUCng4MCt+ZDlo5rLGVg23MMPEmU4f8QqwMot7a4d2WP1e0EMf2BAtGVUsTOIF37bIUQcvZR0jZMy2m40afBCcH4QWhXYhVk3eThYrYIj2LToh68UXqKLCOu4eLeoYngBn/CBea5QvUBtUA8x5Xwb3CtAgMBAAECggEAFbSI1+bRv04EIebnQ5/jHnTTFIbCGh4z/JZlHD66ZAnHgd0JNQQZk4R4bnsZ3wY0BdX1t5TmApQUuJduNzEmHN67b/fJ1yMj6QpFbWOSsFo1iKNvFwezNOyKlJPq3j1ddwVrqR4UsRcPXwyjNMtf70V2X09siML6jxqD8zGHZiNaF1GKYydjI2IuFrPO+zM3DnWuNc3lsM7S9G/+aScnaDm3RRt92oCri1L2FlGNPCXIOuBEMtCQAXAJM/E8p10WkQEo0SLMBN91vbncprr3iBV6+CRRBy1r0CO8dYu+jMDbMDCtlkTFYND6OpJ3+/6XF7Ide7kkJunJjUwfT8O2YQKBgQDSMhg0bOJh+Pn/IiAI7Ly6lWzXugEsrE29boVmdcx0olBHJuovJcjFNNBgkkaeo+AAgtcAbSkCkav8t3vynfiu7hAdw7qRRrB1KHWsBuOJgvw1UENrl7edoigno6qYqU3fyf29tWp6ojPz/6Y5n7HnMWBtt2lc5Cz/0nwI6ljzaQKBgQDBNJ94QG/rlq+PAHkjvNUG82CQSpD/WEpWE1JhaJKsx+5AL7WM/5+/7+Rw+jTmnq1744WNnpPs7wmvn1n5jRRtYos4L6mykMiEN8EQowHBfhAnTg5iq+CBKDsjf4Y0J28cvlB9SEGKvfzmD+xsaoJ4z2uDSh5YE/+hetWY2KpepQKBgFc7TuxC29iI+Uc2pFDP3qsYZClLGj2t7D1XZqlU7drhmatNrRaP+bhN6MSLMB+aJtZPdmbI5qIYTmX8x8WyZYhDaBDSL9UmnwigF+Winj9tSrnda311Y1BaAYwh0iS07oqXS2S1q1Dli+YRDK0RZ0VpKnmeCm3wi/RHKA6TIwMxAoGAMt5PClM05HtVF7qRKoaiM+VKTFNFn+U4FTebHghxbcpqAT5Od6QqBFf99nz6BqpKlO7Pj/zrh5tcGoBDKUAq263xZ8as0FXsZVtkmqPAZ5hwWljj0rjcMEVOZMdDp2GmkJPPD11B3GyvNEeHAPh+B57c+MFAAgKp8HMt38NT//0CgYEAghVcrd7xBn+1BrV+TSgRuGqC6n/yIUzas5lOFzBqcsFRRQ8iBxwaZjnwlBhLMxJ/chZStyrMtd7tV75IYlOZ//e8CeBwuymrZmR88D1M9Is5ZzbELqU6yr9labXIdL/CwLsSWwpx+elFWUQtF8xAR1HV7nR23gH0XI0GeOjJ4X4=
+  alipayPublicKey: MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoHg9mDzqESzAj7Tnp7LqTkQ256V2eK3OvFu3TkFJGbl0JnzPsiV5RH+mwPj69MwiHmflAn7/V0NBkRH5sKXU8VfXoy6xP3xgBDQsij37q2R7AgW5nPDZ15pYxlrodaEMkK5XCya1rasR86YolXRL5iHB84MFBogp2kkUochHa9GGEDf6Y6gtpkVcjJAE9GCzoE2pSe3y3QFC1RIHtOyczUL256LPqYn3xy4W9lb6OFlaRGXR7UHs5sz+vASxhNeMikWAmLVmj1o6WXmnKQbLtqJvDHlg+wrWbbQomjGp0pkqpztJvF7w/H/2PFidW3aWenPV9s+qTkGGdkGRDJXy/wIDAQAB
+  notifyUrl: http://q263b373.natappfree.cc/user/alipay/notify
+  gateway: openapi-sandbox.dl.alipaydev.com
+  withdraw:
+    notifyUrl: http://q263b373.natappfree.cc/user/alipay/withdraw/notify
+
+# 阿里云 OSS 配置
+aliyun:
+  oss:
+    endpoint: "https://oss-cn-beijing.aliyuncs.com"
+    bucket-name: haut-campus-knowledge-sharing-and-trading-platform
+    region: cn-beijing
+    access-key-id: LTAI5t8dnQGGJsUQNMbwisU1
+    access-key-secret: KyNQD2xKRMnU0yPyqBVIS3MD5jp97v
+
