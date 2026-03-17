@@ -1,3 +1,4 @@
+import heapq
 import torch
 import torch.nn as nn
 import pandas as pd
@@ -85,13 +86,12 @@ class ThreeTowerModel(nn.Module):
         for i in range(user_discrete.size(1)):
             emb = self.user_discrete_embeds[i](user_discrete[:, i]) # 取一整列，即某个离散特征的所有值，一次性embedding
             user_emb_list.append(emb)
-        user_emb_list.extend(user_continuous) # 连续特征已在FeatureProcessor中进行过归一化
+        user_emb_list.append(user_continuous) # 连续特征已在FeatureProcessor中进行过归一化
 
-        scene_emb_list=[]
+        # 离散场景特征也需进入用户塔
         for i in range(scene_discrete.size(1)):
             emb = self.scene_discrete_embeds[i](scene_discrete[:, i])
-            scene_emb_list.append(emb)
-        user_emb_list.extend(scene_emb_list)
+            user_emb_list.append(emb)
         user_concat = torch.cat(user_emb_list, dim=1)
         user_vector = self.user_tower(user_concat)
 
@@ -222,7 +222,7 @@ def train_three_tower_model():
     model.to(device)
 
     # ========= 7. 训练循环 =========
-    num_epochs = 5
+    num_epochs = 1
     for epoch in range(num_epochs):
         # 训练
         model.train()
@@ -261,44 +261,52 @@ def train_three_tower_model():
             optimizer.step()
 
             total_train_loss += total_loss.item()
-
-        # 验证
-        model.eval()
-        total_val_loss = 0
-        with torch.no_grad():
-            for batch in val_loader:
-                user_ids = batch['user_ids'].to(device)
-                user_discrete = batch['user_discrete'].to(device)
-                user_continuous = batch['user_continuous'].to(device)
-                scene_discrete = batch['scene_discrete'].to(device)
-                item_ids = batch['item_ids'].to(device)
-                item_discrete = batch['item_discrete'].to(device)
-                item_continuous = batch['item_continuous'].to(device)
-                stat_continuous = batch['stat_continuous'].to(device)
-                targets = batch['targets'].to(device)
-
-                click_pred, like_pred, collect_pred, forward_pred = model(
-                    user_ids, user_discrete, user_continuous, scene_discrete,
-                    item_ids, item_discrete, item_continuous,
-                    stat_continuous
-                )
-
-                loss_click = criterion(click_pred, targets[:, 0])
-                loss_like = criterion(like_pred, targets[:, 1])
-                loss_collect = criterion(collect_pred, targets[:, 2])
-                loss_forward = criterion(forward_pred, targets[:, 3])
-
-                val_total_loss = loss_click + loss_like + loss_collect + loss_forward
-                total_val_loss += val_total_loss.item()
-
         print(f"Epoch {epoch + 1}/{num_epochs}:")
         print(f"  Train Loss: {total_train_loss / len(train_loader):.4f}")
-        print(f"  Val Loss: {total_val_loss / len(val_loader):.4f}")
 
-    return model, processor
+    # 验证
+    model.eval()
+    total_val_loss = 0
+    item_score=dict() # 物品粗排分数字典，{item_id:score}
+    with torch.no_grad():
+        for batch in val_loader:
+            user_ids = batch['user_ids'].to(device)
+            user_discrete = batch['user_discrete'].to(device)
+            user_continuous = batch['user_continuous'].to(device)
+            scene_discrete = batch['scene_discrete'].to(device)
+            item_ids = batch['item_ids'].to(device)
+            item_discrete = batch['item_discrete'].to(device)
+            item_continuous = batch['item_continuous'].to(device)
+            stat_continuous = batch['stat_continuous'].to(device)
+            targets = batch['targets'].to(device)
+
+            click_pred, like_pred, collect_pred, forward_pred = model(
+                user_ids, user_discrete, user_continuous, scene_discrete,
+                item_ids, item_discrete, item_continuous,
+                stat_continuous
+            )# 带batch的
+            # 融分公式融合排序
+            for i in range(len(item_ids)):
+                item_score[item_ids[i]] = 0.4*click_pred[i]+0.1*like_pred[i]+0.3*collect_pred[i]+0.2*forward_pred[i]
+
+            loss_click = criterion(click_pred, targets[:, 0])
+            loss_like = criterion(like_pred, targets[:, 1])
+            loss_collect = criterion(collect_pred, targets[:, 2])
+            loss_forward = criterion(forward_pred, targets[:, 3])
+
+            val_total_loss = loss_click + loss_like + loss_collect + loss_forward
+            total_val_loss += val_total_loss.item()
+
+    # 根据粗排分数截断返回
+    topn=heapq.nlargest(100,item_score.items(),key=lambda x:x[1])
+    ids=set([int(x[0]) for x in topn])
+    print(f"  Val Loss: {total_val_loss / len(val_loader):.4f}")
+
+    return model, processor,ids
 
 
 # 运行训练
 if __name__ == "__main__":
-    model, processor = train_three_tower_model()
+    model, processor,item_ids = train_three_tower_model()
     print("三塔模型训练完成！")
+    print("选中的item_ids：",item_ids)
