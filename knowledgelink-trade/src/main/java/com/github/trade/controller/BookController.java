@@ -28,12 +28,12 @@ public class BookController {
         return bookService.getBooksByConditions(bookSearchDTO);
     }
 
-    @PutMapping("/uploadBookInfo")
+    @PostMapping("/uploadBookInfo")
     public Result uploadBookInfo(@RequestBody BookDTO bookDTO) {
         return bookService.uploadBookInfo(bookDTO);
     }
 
-    @PutMapping("/uploadBookAvatar")
+    @PostMapping("/uploadBookAvatar")
     public Result uploadBookAvatar(@RequestParam("file") MultipartFile file) {
         return bookService.uploadBookAvatar(file);
     }
@@ -43,7 +43,7 @@ public class BookController {
         return bookService.removeBookInfo(id);
     }
 
-    @PostMapping("/updateBookInfo")
+    @PutMapping("/updateBookInfo")
     public Result updateBookInfo(@RequestBody BookDTO bookDTO) {
         return bookService.updateBookInfo(bookDTO);
     }

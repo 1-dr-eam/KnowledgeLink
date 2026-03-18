@@ -1,9 +1,6 @@
 package com.github.trade.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -17,16 +14,16 @@ import java.time.LocalDateTime;
 @Data
 @TableName("shopping_car")
 public class ShoppingCar {
-        @TableId(type = IdType.AUTO)
-        private Integer id;
+        @TableId(type = IdType.ASSIGN_ID)
+        private Long id;
         @TableField("user_id")
-        private Integer userId;
+        private Long userId;
         @TableField("book_id")
-        private Integer bookId;
+        private Long bookId;
         private Integer count;
-        @TableField("create_time")
+        @TableField(value = "create_time", fill = FieldFill.INSERT)
         private LocalDateTime createTime;
-        @TableField("update_time")
+        @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
         private LocalDateTime updateTime;
         private Boolean inventory;
 }

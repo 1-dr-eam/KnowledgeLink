@@ -12,10 +12,10 @@ import java.util.List;
  * @date 2026/03/16
  */
 @Data
-public class ShoppingCarVO {
-    private Integer id;
-    private Integer userId;
-    private Integer bookId;
+public class CartVO {
+    private Long id;
+    private Long userId;
+    private Long bookId;
     private Integer count;
     private String bookName;
     private String bookAuthor;

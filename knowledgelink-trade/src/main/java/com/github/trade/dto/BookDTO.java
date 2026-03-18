@@ -22,6 +22,7 @@ public class BookDTO {
     private String subClassify;
     private Boolean note;
     private String description;
+    private Integer count;
     private Integer status;
     private List<String> avatar;
 }

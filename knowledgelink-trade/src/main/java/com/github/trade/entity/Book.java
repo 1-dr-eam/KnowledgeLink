@@ -27,6 +27,7 @@ public class Book {
     private String subClassify;
     private Boolean note;
     private String description;
+    private Integer count;
     private Integer status;
     private String avatar;
     @TableField(value = "create_time", fill = FieldFill.INSERT)

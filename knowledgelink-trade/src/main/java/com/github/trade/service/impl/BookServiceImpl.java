@@ -4,6 +4,7 @@ import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.github.common.dto.Result;
 import com.github.common.utils.CosUtil;
+import com.github.common.utils.UserHolder;
 import com.github.trade.dto.BookDTO;
 import com.github.trade.dto.BookSearchDTO;
 import com.github.trade.entity.Book;
@@ -62,30 +63,43 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
         }
         // id 不为空直接返回具体书籍的信息
         if(bookSearchDTO.getId() != null){
-            String bookKey = BOOK_INFO_KEY + bookSearchDTO.getId();
-            if(stringRedisTemplate.hasKey(bookKey)) {
-                String bookJson = stringRedisTemplate.opsForValue().get(bookKey);
-                Book book = JSONUtil.toBean(bookJson, Book.class);
-                // avatarJson转换为List
-                BookDTO bookDTO = bookConversionUtil.toBookDTO(book);
-                return Result.success(bookDTO);
-            } else {
-                Book book = baseMapper.selectById(bookSearchDTO.getId());
-                if(book == null){
-                    return Result.error("查找的书籍信息不存在");
-                }
-                BookDTO bookDTO = bookConversionUtil.toBookDTO(book);
-                // TODO 后续可通过新线程或者MQ优化（待测试）
-                String bookJson = JSONUtil.toJsonStr(book);
-                stringRedisTemplate.opsForValue().set(bookKey, bookJson, BOOK_INFO_TTL, TimeUnit.MINUTES);
-                return Result.success(bookDTO);
+            BookDTO bookDTO = getBookInfoById(bookSearchDTO.getId());
+            if(bookDTO == null){
+                return Result.error("书籍信息不存在");
             }
+            return Result.success(bookDTO);
         }
         try {
             List<BookDTO> books = bookEsService.searchBooks(bookSearchDTO);
             return Result.success(books);
         } catch (Exception e) {
             return Result.error("书籍搜索失败");
+        }
+    }
+
+    /**
+     * 通过ID获取图书信息
+     *
+     * @param id ID
+     * @return 图书dto
+     */
+     BookDTO getBookInfoById(Long id) {
+        String bookKey = BOOK_INFO_KEY + id;
+        if(stringRedisTemplate.hasKey(bookKey)) {
+            String bookJson = stringRedisTemplate.opsForValue().get(bookKey);
+            Book book = JSONUtil.toBean(bookJson, Book.class);
+            // avatarJson转换为List
+            return bookConversionUtil.toBookDTO(book);
+        } else {
+            Book book = baseMapper.selectById(id);
+            if(book == null){
+                return null;
+            }
+            BookDTO bookDTO = bookConversionUtil.toBookDTO(book);
+            // TODO 后续可通过新线程或者MQ优化（待测试）
+            String bookJson = JSONUtil.toJsonStr(book);
+            stringRedisTemplate.opsForValue().set(bookKey, bookJson, BOOK_INFO_TTL, TimeUnit.MINUTES);
+            return bookDTO;
         }
     }
 
@@ -100,6 +114,8 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
         if(bookDTO == null){
             return Result.error("商品信息缺失");
         }
+        Long userId = UserHolder.getUser().getId();
+        bookDTO.setSellerId(userId);
         Book book = bookConversionUtil.toBook(bookDTO);
         baseMapper.insert(book);
         // 使用redis进行缓存

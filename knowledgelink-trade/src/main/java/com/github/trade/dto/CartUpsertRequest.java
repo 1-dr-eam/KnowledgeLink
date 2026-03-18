@@ -3,13 +3,13 @@ package com.github.trade.dto;
 import lombok.Data;
 
 /**
- * 购物车更新dto
+ * 购物车添加和修改数据dto
  *
  * @author ning
  * @date 2026/03/16
  */
 @Data
-public class ShoppingCarUpdateDTO {
+public class CartUpsertRequest {
     private Long id;
     private Integer count;
 }
