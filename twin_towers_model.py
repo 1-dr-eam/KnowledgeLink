@@ -2,18 +2,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import numpy as np
 import pandas as pd
-from collections import defaultdict
 from feature_processor import FeatureProcessor
 from utils import collate_fn_two_towers
 from dataset import TwoTowerDataset
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ----------------------------
-# 双塔模型
-# ----------------------------
+# ======================================
+# ============== 双塔模型 ================
+# ======================================
 class TwoTowerModel(nn.Module):
     def __init__(self, n_users, n_items, user_discrete_sizes, item_discrete_sizes,
                  user_cont_dim, item_cont_dim, embed_dim=32, tower_hidden=[128, 64]):
@@ -108,116 +106,156 @@ class TwoTowerModel(nn.Module):
         cos_sim = torch.sum(u_vec * i_vec, dim=1)
         return cos_sim
 
-# ----------------------------
-# 训练与评估
-# ----------------------------
-def evaluate_recall_at_k(model, df_val, processor, user_meta_df, item_meta_df,
-                         user_discrete_cols, user_continuous_cols,
-                         item_discrete_cols, item_continuous_cols,
-                         k=10, device='cuda'):
-    model.eval()
+class TwoTowersModelRecommender:
+    """双塔模型在线召回器"""
+    def __init__(self, model, processor, device='cuda'):
+        """
+        初始化在线召回器
+        Args:
+            model: 训练好的双塔模型
+            processor: 特征处理器
+            device: 推理设备
+        """
+        self.model = model
+        self.processor = processor
+        self.device = device
+        self.all_item_vectors = None  # 预计算的所有物品特征向量
+        self.all_item_ids = None  # 所有物品ID列表
+        self.item_features = {}  # 物品ID到物品特征的映射
 
-    # 构建 user_id → 用户特征的映射
-    user_meta_dict = {}
-    for _, row in user_meta_df.iterrows():
-        user_meta_dict[row['user_id']] = row.to_dict()
+    def preprocess_user_feature(self, user_feature, user_discrete_cols, user_continuous_cols):
+        """
+        预处理用户特征，转换为模型输入格式
+        Args:
+            user_feature: UserFeature对象
+            user_discrete_cols: 用户离散特征列名列表
+            user_continuous_cols: 用户连续特征列名列表
+        Returns:
+            处理后的用户特征张量 (user_ids, user_discrete, user_continuous)
+        """
+        # 针对字典的**解包操作，构造单行Dataframe对象
+        user_df = pd.DataFrame([{
+            'user_id': user_feature.user_id,
+            **user_feature.discrete_features,
+            **user_feature.continuous_features
+        }])
 
-    # 构建 item_id → 物品特征的映射
-    item_meta_dict = {}
-    for _, row in item_meta_df.iterrows():
-        item_meta_dict[row['item_id']] = row.to_dict()
+        user_ids, user_discrete, user_cont = self.processor.transform_user_features(
+            user_df, user_discrete_cols, user_continuous_cols
+        )
 
-    # 用户 → 正样本物品集合
-    user_to_items = defaultdict(set)
-    for _, row in df_val.iterrows():
-        user_to_items[row['user_id']].add(row['item_id'])
+        return user_ids.to(self.device), user_discrete.to(self.device), user_cont.to(self.device)
 
-    # 获取所有候选物品ID（用 item_meta_df 中的物品）
-    all_item_ids_list = list(item_meta_dict.keys())
-    all_items_df = pd.DataFrame([item_meta_dict[iid] for iid in all_item_ids_list])
-    item_ids, item_disc, item_cont = processor.transform_item_features(
-        all_items_df, item_discrete_cols, item_continuous_cols
-    )
-    item_ids = item_ids.to(device)
-    item_disc = item_disc.to(device)
-    item_cont = item_cont.to(device)
+    def preprocess_item_feature(self, item_feature, item_discrete_cols, item_continuous_cols):
+        """
+        预处理物品特征，转换为模型输入格式
+        Args:
+            item_feature: ItemFeature对象
+            item_discrete_cols: 物品离散特征列名列表
+            item_continuous_cols: 物品连续特征列名列表
+        Returns:
+            处理后的物品特征张量 (item_ids, item_discrete, item_continuous)
+        """
+        item_df = pd.DataFrame([{
+            'item_id': item_feature.item_id,
+            **item_feature.discrete_features,
+            **item_feature.continuous_features
+        }])
 
-    with torch.no_grad():
-        # 事先计算物品塔，输出全部物品特征向量
-        all_item_vecs = model.forward_item(item_ids, item_disc, item_cont)  # [N, D]
+        item_ids, item_discrete, item_cont = self.processor.transform_item_features(
+            item_df, item_discrete_cols, item_continuous_cols
+        )
 
-    recalls = []
-    with torch.no_grad():
-        for user_id, true_items in user_to_items.items():# 对于验证集中用户-交互过的若干物品
-            if not true_items or user_id not in user_meta_dict:
-                continue
+        return item_ids.to(self.device), item_discrete.to(self.device), item_cont.to(self.device)
 
-            # 使用用户真实特征
-            user_feat = user_meta_dict[user_id]
-            user_df = pd.DataFrame([user_feat])
-            u_ids, u_disc, u_cont = processor.transform_user_features(
-                user_df, user_discrete_cols, user_continuous_cols
+    def compute_all_item_vectors(self, all_item_features, item_discrete_cols, item_continuous_cols):
+        """
+        离线计算所有物品的特征向量
+        Args:
+            all_item_features: 所有物品特征列表
+            item_discrete_cols: 物品离散特征列名列表
+            item_continuous_cols: 物品连续特征列名列表
+        """
+        print("正在计算所有物品的特征向量...")
+
+        # 准备批量数据
+        item_ids_list = []
+        item_discrete_list = []
+        item_continuous_list = []
+
+        for item_feat in all_item_features:
+            # 存储物品特征映射和所有物品ID列表
+            self.item_features[item_feat.item_id] = item_feat
+            self.all_item_ids.append(item_feat.item_id)
+            item_ids, item_discrete, item_cont = self.preprocess_item_feature(
+                item_feat, item_discrete_cols, item_continuous_cols
             )
-            u_ids = u_ids.to(device)
-            u_disc = u_disc.to(device)
-            u_cont = u_cont.to(device)
+            item_ids_list.append(item_ids)
+            item_discrete_list.append(item_discrete)
+            item_continuous_list.append(item_cont)
 
-            user_vec = model.forward_user(u_ids, u_disc, u_cont)  # [1, D]
-            scores = torch.matmul(user_vec, all_item_vecs.T).squeeze(0)  # 矩阵乘法，一次性求出当前用户与所有物品的余弦相似度[N]
+        # 批量处理
+        all_item_ids = torch.cat(item_ids_list, dim=0)
+        all_item_discrete = torch.cat(item_discrete_list, dim=0)
+        all_item_continuous = torch.cat(item_continuous_list, dim=0)
 
-            # Top-K
-            topk = min(k, len(scores))
-            _, top_indices = torch.topk(scores, topk)
-            top_item_ids = [all_item_ids_list[i] for i in top_indices.cpu().numpy()] # 提取出预测余弦相似度最高的k个物品
+        # 使用物品塔计算所有物品特征向量
+        self.model.eval()
+        with torch.no_grad():
+            self.all_item_vectors = self.model.forward_item(
+                all_item_ids, all_item_discrete, all_item_continuous
+            )
 
-            hits = len(set(top_item_ids) & true_items) # 真实交互的物品true_items中有几个是在topk中，即预测准了几个
-            recall = hits / len(true_items)
-            recalls.append(recall)
+        print(f"完成计算，共{len(self.all_item_ids)}个物品的特征向量")
 
-    return np.mean(recalls) if recalls else 0.0
+    def recommend_for_user(self, user_feature, user_discrete_cols, user_continuous_cols, top_k=10):
+        """
+        为特定用户进行召回
+        Args:
+            user_feature: UserFeature对象
+            user_discrete_cols: 用户离散特征列名列表
+            user_continuous_cols: 用户连续特征列名列表
+            top_k: 召回物品数量
+        Returns:
+            召回的物品ID列表
+        """
+        if self.all_item_vectors is None:
+            raise ValueError("请先调用compute_all_item_vectors计算所有物品特征向量")
 
+        # 计算用户特征向量
+        user_ids, user_discrete, user_continuous = self.preprocess_user_feature(
+            user_feature, user_discrete_cols, user_continuous_cols
+        )
 
-def train_model():
-    # ========== 1. 生成完整交互数据 ==========
-    n_users, n_items = 1000, 5000
-    total_interactions = 10000
+        self.model.eval()
+        with torch.no_grad():
+            user_vector = self.model.forward_user(user_ids, user_discrete, user_continuous)
 
-    full_df = pd.DataFrame({
-        'user_id': np.random.randint(0, n_users, total_interactions),
-        'item_id': np.random.randint(0, n_items, total_interactions),
-        'age': np.random.randint(18, 60, total_interactions),
-        'gender': np.random.choice(['M', 'F'], total_interactions),
-        'category': np.random.choice(['A', 'B', 'C'], total_interactions),
-        'price': np.random.uniform(10, 100, total_interactions),
-    })
+        # 计算用户向量与所有物品向量的余弦相似度
+        # 使用矩阵乘法一次性计算所有相似度
+        similarities = torch.matmul(user_vector, self.all_item_vectors.T).squeeze(0)
 
-    # ========== 2. 划分训练集和验证集 ==========
-    # 按用户划分更合理，但这里简化：随机划分交互
-    train_frac = 0.8
-    train_size = int(total_interactions * train_frac)
-    df_train = full_df.iloc[:train_size].reset_index(drop=True)
-    df_val = full_df.iloc[train_size:].reset_index(drop=True)
+        # 获取相似度最高的top_k个物品
+        top_k = min(top_k, len(similarities))
+        _, top_indices = torch.topk(similarities, top_k)
 
-    # ========== 3. 提取元数据（关键！）==========
-    # 用户元数据：去重保留每个用户的特征（假设同一用户特征不变）
-    user_meta_df = df_train[['user_id', 'age', 'gender']].drop_duplicates('user_id')
-    # 物品元数据：去重保留每个物品的特征
-    item_meta_df = df_train[['item_id', 'category', 'price']].drop_duplicates('item_id')
+        # 用索引得到对应的物品ID
+        recommended_item_ids = [self.all_item_ids[i] for i in top_indices.cpu().numpy()]
 
-    # ========== 4. 特征列定义 ==========
-    user_discrete_cols = ['gender']
-    item_discrete_cols = ['category']
-    user_continuous_cols = ['age']
-    item_continuous_cols = ['price']
+        return set(recommended_item_ids)
 
-    # ========== 5. 预处理（只用训练集）==========
+# ==============================================
+# ================= 训练双塔模型 =================
+# ==============================================
+def train_twin_towers_model(df_train,user_discrete_cols,user_continuous_cols,item_discrete_cols,item_continuous_cols):
+    # ============ 预处理 ============
     processor = FeatureProcessor()
     processor.build_vocab_and_scale(
         df_train, user_discrete_cols, item_discrete_cols,
         user_continuous_cols, item_continuous_cols
     )
 
-    # ========== 6. 模型与数据加载器==========
+    # ========== 模型与数据加载器 ==========
     model = TwoTowerModel(
         n_users=len(processor.user_id_vocab),
         n_items=len(processor.item_id_vocab),
@@ -241,7 +279,7 @@ def train_model():
     )
     dataloader = DataLoader(dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_two_towers)
 
-    # ========== 7. 训练循环（同修正版）==========
+    # ========== 训练循环 ==========
     for epoch in range(10):
         model.train()
         total_loss = 0
@@ -270,17 +308,7 @@ def train_model():
             optimizer.step()
             total_loss += loss.item()
 
-        # ========== 8. 评估 ==========
-        recall_at_10 = evaluate_recall_at_k(
-            model, df_val, processor,
-            user_meta_df, item_meta_df,
-            user_discrete_cols, user_continuous_cols,
-            item_discrete_cols, item_continuous_cols,
-            k=10, device="cuda"
-        )
-        print(f"Epoch {epoch + 1}, Avg Loss: {total_loss / len(dataloader):.4f}, Val Recall@10: {recall_at_10:.4f}")
+        print(f"Epoch {epoch + 1}, Avg Loss: {total_loss / len(dataloader):.4f}")
+    print("twin towers model training finished")
 
     return model, processor
-
-if __name__ == "__main__":
-    model, processor = train_model()
