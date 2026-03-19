@@ -258,7 +258,7 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
             return;
         }
         stringRedisTemplate.opsForHash().put(tokenKey, bookIdField, String.valueOf(count));
-        stringRedisTemplate.expire(tokenKey, CART_TTL, TimeUnit.SECONDS);
+        stringRedisTemplate.expire(tokenKey, CART_TTL, TimeUnit.MINUTES);
     }
 
     private void addCartCountToRedis(Long userId, Long bookId, Long delta) {
@@ -269,6 +269,6 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
             stringRedisTemplate.opsForHash().delete(tokenKey, bookIdField);
             return;
         }
-        stringRedisTemplate.expire(tokenKey, CART_TTL, TimeUnit.SECONDS);
+        stringRedisTemplate.expire(tokenKey, CART_TTL, TimeUnit.MINUTES);
     }
 }
