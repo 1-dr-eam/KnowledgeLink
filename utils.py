@@ -60,9 +60,9 @@ def collate_fn_three_towers(batch):
         'targets': targets
     }
 
-# ========================
-# ========= 重排 ==========
-# ========================
+# ==========================================
+# =================== 重排 ==================
+# ==========================================
 def print_selection_results(original_items, selected_items, lambda_param, selection_count):
     """打印选择结果"""
     print(f"MMR多样性重排算法结果")

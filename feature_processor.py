@@ -25,27 +25,26 @@ class FeatureProcessor:
         if missing:
             raise ValueError(f"{context} 缺少必要列: {missing}")
 
-    def build_vocab_and_scale_two_tower(self, df_train,
+    def build_vocab_and_scale_two_tower(self, df,
                                         user_discrete_cols, item_discrete_cols,
                                         user_continuous_cols, item_continuous_cols):
         """为双塔模型构建词汇表和标准化器"""
         # 设置模式
         self._mode = 'two_tower'
-
         # 构建ID词汇表
-        all_user_ids = set(df_train['user_id'])
+        all_user_ids = set(df['user_id'])
         self.user_id_vocab = {uid: i for i, uid in enumerate(sorted(all_user_ids))}
 
-        all_item_ids = set(df_train['item_id'])
+        all_item_ids = set(df['item_id'])
         self.item_id_vocab = {iid: i for i, iid in enumerate(sorted(all_item_ids))}
 
         # 构建离散特征词汇表
         for col in user_discrete_cols:
-            unique_vals = set(df_train[col].values)
+            unique_vals = set(df[col].values)
             self.user_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
 
         for col in item_discrete_cols:
-            unique_vals = set(df_train[col].values)
+            unique_vals = set(df[col].values)
             self.item_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
 
         # 构建连续特征标准化器
@@ -53,11 +52,11 @@ class FeatureProcessor:
         self.item_cont_scaler = StandardScaler()
 
         if user_continuous_cols:
-            self.user_cont_scaler.fit(df_train[user_continuous_cols].values)
+            self.user_cont_scaler.fit(df[user_continuous_cols].values)
         if item_continuous_cols:
-            self.item_cont_scaler.fit(df_train[item_continuous_cols].values)
+            self.item_cont_scaler.fit(df[item_continuous_cols].values)
 
-    def build_vocab_and_scale_three_tower(self, df_train,
+    def build_vocab_and_scale_three_tower(self, df,
                                           user_discrete_cols, item_discrete_cols, scene_discrete_cols,
                                           user_cont_cols, item_cont_cols, stat_cont_cols):
         """为三塔模型构建词汇表和标准化器"""
@@ -65,23 +64,23 @@ class FeatureProcessor:
         self._mode = 'three_tower'
 
         # 构建ID词汇表（复用双塔逻辑）
-        all_user_ids = set(df_train['user_id'])
+        all_user_ids = set(df['user_id'])
         self.user_id_vocab = {uid: i for i, uid in enumerate(sorted(all_user_ids))}
 
-        all_item_ids = set(df_train['item_id'])
+        all_item_ids = set(df['item_id'])
         self.item_id_vocab = {iid: i for i, iid in enumerate(sorted(all_item_ids))}
 
         # 构建所有离散特征词汇表
         for col in user_discrete_cols:
-            unique_vals = set(df_train[col].values)
+            unique_vals = set(df[col].values)
             self.user_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
 
         for col in item_discrete_cols:
-            unique_vals = set(df_train[col].values)
+            unique_vals = set(df[col].values)
             self.item_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
 
         for col in scene_discrete_cols:
-            unique_vals = set(df_train[col].values)
+            unique_vals = set(df[col].values)
             self.scene_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
 
         # 构建所有连续特征标准化器
@@ -91,13 +90,13 @@ class FeatureProcessor:
 
         # 拟合标准化器
         if user_cont_cols:
-            self.user_cont_scaler.fit(df_train[user_cont_cols].values)
+            self.user_cont_scaler.fit(df[user_cont_cols].values)
         if item_cont_cols:
-            self.item_cont_scaler.fit(df_train[item_cont_cols].values)
+            self.item_cont_scaler.fit(df[item_cont_cols].values)
         if stat_cont_cols:
-            self.stat_cont_scaler.fit(df_train[stat_cont_cols].values)
+            self.stat_cont_scaler.fit(df[stat_cont_cols].values)
 
-    def build_vocab_and_scale(self, df_train,
+    def build_vocab_and_scale(self, df,
                               user_discrete_cols=None, item_discrete_cols=None,
                               user_continuous_cols=None, item_continuous_cols=None,
                               # 三塔新增参数（默认为None，保持向后兼容）
@@ -114,17 +113,17 @@ class FeatureProcessor:
             stat_cont_cols = stat_cont_cols or []
 
             self.build_vocab_and_scale_three_tower(
-                df_train,
+                df,
                 user_discrete_cols, item_discrete_cols, scene_discrete_cols,
                 user_continuous_cols, item_continuous_cols, stat_cont_cols
             )
         else:
-            # 双塔模式（保持原有行为）
+            # 双塔模式
             user_continuous_cols = user_continuous_cols or []
             item_continuous_cols = item_continuous_cols or []
 
             self.build_vocab_and_scale_two_tower(
-                df_train,
+                df,
                 user_discrete_cols or [], item_discrete_cols or [],
                 user_continuous_cols, item_continuous_cols
             )
