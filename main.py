@@ -2,6 +2,7 @@ import pandas as pd
 from entities import *
 from recall import recall
 from rough_ranking import train_three_towers_model,rough_ranking
+from fine_ranking import train_multi_task_model,fine_ranking
 
 def main():
     """主流程"""
@@ -58,13 +59,29 @@ def main():
     # 提取召回的id列表对应的行
     df_recall_items = df_items[df_items['item_id'].isin(recall_items_ids)].reset_index(drop=True)
     df_user = pd.DataFrame([df_users.iloc[0]]*len(df_recall_items)).reset_index(drop=True)
-    df_three_towers=pd.concat([df_recall_items,df_user],axis=1)
+    df_three_towers=pd.concat([df_recall_items.copy(),df_user.copy()],axis=1) # 因为下面还要用，用copy防止出现未知bug
     # 添加上当前的场景特征，统计特征已经包含在df_three_towers中了
+    # df_three_towers中的每一行代表一个要进行打分的物品，除了物品特征以外，用户特征，用户统计特征和场景特征均相同
     df_three_towers['hour']=[15]*len(df_three_towers)
     df_three_towers['is_weekend'] = [1] * len(df_three_towers)
     df_three_towers['is_holiday'] = [0] * len(df_three_towers)
-    # df_three_towers中的每一行代表一个要进行打分的物品，除了物品特征以外，用户特征，用户统计特征和场景特征均相同
+    # 粗排
     rough_ranking_ids=rough_ranking(three_towers_model,three_processor,df_three_towers)
+    # =================================================
+    # ==================== 精排 ========================
+    # =================================================
+    # 训练多目标排序模型，使用全部数据训练
+    multi_task_model,multi_task_processor=train_multi_task_model(df_train.copy())
+    # 提取粗排的id列表对应的行
+    df_rough_items = df_recall_items[df_recall_items['item_id'].isin(rough_ranking_ids)].reset_index(drop=True)
+    df_user = pd.DataFrame([df_users.iloc[0]] * len(df_rough_items)).reset_index(drop=True)
+    df_multi_task = pd.concat([df_rough_items, df_user], axis=1)
+    # 添加上当前的场景特征
+    df_multi_task['hour'] = [15] * len(df_multi_task)
+    df_multi_task['is_weekend'] = [1] * len(df_multi_task)
+    df_multi_task['is_holiday'] = [0] * len(df_multi_task)
+    item_id_score=fine_ranking(multi_task_model,multi_task_processor,df_multi_task)
+    print("精排分数：",item_id_score)
 
 if __name__ == '__main__':
     main()

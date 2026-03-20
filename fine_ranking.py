@@ -1,8 +1,5 @@
 import torch
 import torch.nn as nn
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from feature_processor import FeatureProcessor
@@ -100,101 +97,36 @@ class MultiTaskNet(nn.Module):
             task_outputs.append(score)
         return task_outputs
 
-
-def create_sample_data_with_features():
-    """创建带特征的示例数据"""
-    n_samples = 500
-
-    df = pd.DataFrame({
-        'user_id': np.random.randint(0, 100, n_samples),
-        'item_id': np.random.randint(0, 500, n_samples),
-
-        # 用户离散特征
-        'city': np.random.choice(['Beijing', 'Shanghai', 'Guangzhou', 'Shenzhen'], n_samples),
-        'topic': np.random.choice(['Tech', 'Sports', 'Entertainment', 'Finance'], n_samples),
-
-        # 用户连续特征
-        'age': np.random.randint(18, 60, n_samples),
-        'activity_level': np.random.uniform(0, 1, n_samples),
-        'spending_amount': np.random.uniform(0, 1000, n_samples),
-
-        # 场景离散特征
-        'hour': np.random.randint(0, 24, n_samples),
-        'is_weekend': np.random.choice([0, 1], n_samples),
-        'is_holiday': np.random.choice([0, 1], n_samples),
-
-        # 物品离散特征
-        'category': np.random.choice(['News', 'Video', 'Article', 'Image'], n_samples),
-        'tag': np.random.choice(['Hot', 'Recommended', 'New', 'Popular'], n_samples),
-
-        # 物品连续特征
-        'publish_date': np.random.uniform(0, 365, n_samples),
-        'view_count': np.random.randint(0, 10000, n_samples),
-
-        # 统计特征
-        'user_click_last30d': np.random.randint(0, 100, n_samples),
-        'user_like_last30d': np.random.randint(0, 50, n_samples),
-        'item_click_last30d': np.random.randint(0, 1000, n_samples),
-        'item_like_last30d': np.random.randint(0, 500, n_samples),
-
-        # 目标变量
-        'click': np.random.choice([0, 1], n_samples, p=[0.8, 0.2]),
-        'like': np.random.choice([0, 1], n_samples, p=[0.7, 0.3]),
-        'collect': np.random.choice([0, 1], n_samples, p=[0.9, 0.1]),
-        'forward': np.random.choice([0, 1], n_samples, p=[0.95, 0.05])
-    })
-
-    return df
-
-
-def train_multi_task_model():
+def train_multi_task_model(df):
     """训练多目标模型"""
-    print("开始训练多目标精排模型...")
-
-    # ========= 1. 准备数据 =========
-    df = create_sample_data_with_features()
+    print("multi-task model training...")
 
     # 定义特征列
-    user_discrete_cols = ['city', 'topic']
-    user_cont_cols = ['age', 'activity_level', 'spending_amount']
-    item_discrete_cols = ['category', 'tag']
-    item_cont_cols = ['publish_date', 'view_count']
+    user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
+    user_cont_cols = ['age']
+    item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
+    item_cont_cols = ['price']
     scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
-    stat_cont_cols = ['user_click_last30d', 'user_like_last30d', 'item_click_last30d', 'item_like_last30d']
-    target_cols = ['click', 'like', 'collect', 'forward']
-
-    # 分割数据
-    train_size = int(0.8 * len(df))
-    df_train = df[:train_size]
-    df_val = df[train_size:]
+    stat_cont_cols = ['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m',
+                      'item_click_last3m', 'item_cart_last3m', 'item_buy_last3m', 'item_forward_last3m']
+    target_cols = ['click', 'cart', 'forward', 'buy']
 
     # 使用特征处理器
     processor = FeatureProcessor()
-    processor.build_vocab_and_scale(df_train,
+    processor.build_vocab_and_scale(df,
                                     user_discrete_cols, item_discrete_cols,
                                     user_cont_cols, item_cont_cols,
                                     scene_discrete_cols, stat_cont_cols)
-    # 划分训练和验证集
-    train_size = int(0.8 * len(df))
-    df_train = df.iloc[:train_size].reset_index(drop=True)
-    df_val = df.iloc[train_size:].reset_index(drop=True)
 
-    # 转换训练和验证数据
     # Dataset中包含数据的transform操作
-    train_dataset = ThreeTowerDataset(df_train, processor,
+    train_dataset = ThreeTowerDataset(df, processor,
                                       user_discrete_cols, item_discrete_cols,
                                       scene_discrete_cols, user_cont_cols, item_cont_cols, stat_cont_cols,
                                       target_cols)
-    val_dataset = ThreeTowerDataset(df_val, processor,
-                                    user_discrete_cols, item_discrete_cols,
-                                    scene_discrete_cols, user_cont_cols, item_cont_cols, stat_cont_cols,
-                                    target_cols)
-
     # 创建数据加载器
     train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_three_towers)
-    val_loader = DataLoader(val_dataset, batch_size=256, shuffle=False, collate_fn=collate_fn_three_towers)
 
-    # ========= 2. 定义模型 =========
+    # ========== 定义模型 ==========
     model = MultiTaskNet(
         n_users=len(processor.user_id_vocab),
         n_items=len(processor.item_id_vocab),
@@ -208,7 +140,7 @@ def train_multi_task_model():
         n_tasks=len(target_cols)
     )
 
-    # ========= 3. 定义损失函数和优化器 =========
+    # ========== 定义损失函数和优化器 ==========
     # 使用交叉熵损失
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -216,23 +148,18 @@ def train_multi_task_model():
     # ========= 4. 训练循环 =========
     num_epochs = 50
     best_val_loss = float('inf')
-
+    # 训练阶段
+    model.train()
     for epoch in range(num_epochs):
-        # 训练阶段
-        model.train()
-        train_loss = 0.0
-        train_correct = 0
-        train_total = 0
-
         for batch in train_loader:
             # 获取数据
             user_ids = batch['user_ids'].to(device)
             user_discrete = batch['user_discrete'].to(device)
-            user_continuous = batch['user_continuous'].to(device)
+            user_continuous = batch['user_continuous'].unsqueeze(1).to(device)
             scene_discrete = batch['scene_discrete'].to(device)
             item_ids = batch['item_ids'].to(device)
             item_discrete = batch['item_discrete'].to(device)
-            item_continuous = batch['item_continuous'].to(device)
+            item_continuous = batch['item_continuous'].unsqueeze(1).to(device)
             stat_continuous = batch['stat_continuous'].to(device)
             targets = batch['targets'].to(device)
 
@@ -254,73 +181,49 @@ def train_multi_task_model():
             total_loss.backward()
             optimizer.step()
 
-            train_loss += total_loss.item()
+    print("multi-task model training finished")
 
-            # 计算准确率（阈值为0.5）
-            predictions = [torch.round(output.squeeze()) for output in task_outputs]
-            correct = sum([(pred == targets[:, i]).sum().item()
-                           for i, pred in enumerate(predictions)])
-            train_total += targets.size(0) * len(target_cols)
-            train_correct += correct
+    return model,processor
 
-        # 验证阶段
-        model.eval()
-        val_loss = 0.0
-        val_correct = 0
-        val_total = 0
+def fine_ranking(model, processor, df)->dict:
+    """
+    直接利用 df 构造输入数据，原始特征->预处理->转tensor输入多目标模型
+    """
+    print("fine ranking...")
+    # ============ 特征列定义 ===========
+    user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
+    user_continuous_cols = ['age']
+    item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
+    item_continuous_cols = ['price']
+    scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
+    stat_cont_cols = ['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m',
+                      'item_click_last3m', 'item_cart_last3m', 'item_buy_last3m', 'item_forward_last3m']
+    model.eval()
+    item_index_score = dict()  # 物品精排分数字典，{item_index:score}
+    # 这里因为要处理的物品较少，最多只有几百个，因此不分batch直接一次性计算
+    # 转换特征
+    user_ids, user_discrete, user_continuous = processor.transform_user_features(
+        df, user_discrete_cols, user_continuous_cols)  # 离散特征ID转索引，连续特征归一化
 
-        with torch.no_grad():
-            for batch in val_loader:
-                # 获取数据
-                user_ids = batch['user_ids'].to(device)
-                user_discrete = batch['user_discrete'].to(device)
-                user_continuous = batch['user_continuous'].to(device)
-                scene_discrete = batch['scene_discrete'].to(device)
-                item_ids = batch['item_ids'].to(device)
-                item_discrete = batch['item_discrete'].to(device)
-                item_continuous = batch['item_continuous'].to(device)
-                stat_continuous = batch['stat_continuous'].to(device)
-                targets = batch['targets'].to(device)
+    scene_discrete = processor.transform_scene_features(df, scene_discrete_cols)
 
-                task_outputs = model(
-                    user_ids, user_discrete, user_continuous,
-                    item_ids, item_discrete, item_continuous,
-                    scene_discrete, stat_continuous
-                )
+    item_ids, item_discrete, item_continuous = processor.transform_item_features(
+        df, item_discrete_cols, item_continuous_cols)
 
-                # 计算验证损失
-                total_loss = 0.0
-                for i, output in enumerate(task_outputs):
-                    task_loss = criterion(output.squeeze(), targets[:, i])
-                    total_loss += task_loss
-                val_loss += total_loss.item()
+    stat_continuous = processor.transform_stat_features(df, stat_cont_cols)
+    click_pred, like_pred, collect_pred, forward_pred = model(
+        user_ids, user_discrete, user_continuous,
+        item_ids, item_discrete, item_continuous,
+        scene_discrete,stat_continuous
+    )
+    # 融分公式融合排序
+    for i in range(len(item_ids)):
+        # 这里的item_id其实是索引
+        item_index_score[int(item_ids[i])] = 0.4 * float(click_pred[i]) + 0.1 * float(like_pred[i]) + 0.3 * float(collect_pred[i]) + 0.2 * float(forward_pred[i])
+    # 带着精排分数返回，不做截断
+    index_id_dict = {index: id for id, index in processor.item_id_vocab.items()}
+    item_id_score={index_id_dict[index]:score for index,score in item_index_score.items()} # item_id->fine ranking score
 
-                # 计算验证准确率
-                predictions = [torch.round(output.squeeze()) for output in task_outputs]
-                correct = sum([(pred == targets[:, i]).sum().item()
-                               for i, pred in enumerate(predictions)])
-                val_total += targets.size(0) * len(target_cols)
-                val_correct += correct
+    print("fine ranking finished\n")
 
-        # 计算平均损失和准确率
-        avg_train_loss = train_loss / len(train_loader)
-        avg_val_loss = val_loss / len(val_loader)
-        train_acc = train_correct / train_total
-        val_acc = val_correct / val_total
-
-        print(f"Epoch [{epoch + 1}/{num_epochs}]")
-        print(f"  Train Loss: {avg_train_loss:.4f}, Train Acc: {train_acc:.4f}")
-        print(f"  Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.4f}")
-
-        # 更新最佳验证损失
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            print(f"  * 最佳验证损失更新: {best_val_loss:.4f}")
-
-    print(f"\n训练完成！最终验证损失: {best_val_loss:.4f}")
-
-    return model
-
-
-if __name__ == "__main__":
-    model = train_multi_task_model()
+    return item_id_score
