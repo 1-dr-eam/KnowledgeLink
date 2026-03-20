@@ -118,7 +118,7 @@ class ThreeTowerModel(nn.Module):
 
 def train_three_towers_model(df_train):
     """训练三塔模型"""
-    # ========= 2. 特征列定义 =========
+    # ========== 特征列定义 ==========
     user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
     user_continuous_cols = ['age']
     item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
