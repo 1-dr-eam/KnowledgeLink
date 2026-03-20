@@ -1,6 +1,8 @@
 import torch
 from sklearn.preprocessing import StandardScaler
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 class FeatureProcessor:
     """统一特征处理器，同时支持双塔模型和三塔模型"""
     def __init__(self):
@@ -149,7 +151,7 @@ class FeatureProcessor:
         else:
             user_continuous = torch.zeros((len(df_batch), 0), dtype=torch.float32)
 
-        return user_ids, user_discrete, user_continuous
+        return user_ids.to(device), user_discrete.to(device), user_continuous.to(device)
 
     def transform_item_features(self, df_batch, item_discrete_cols, item_cont_cols):
         """转换物品特征（双塔和三塔通用）"""
@@ -172,7 +174,7 @@ class FeatureProcessor:
         else:
             item_continuous = torch.zeros((len(df_batch), 0), dtype=torch.float32)
 
-        return item_ids, item_discrete, item_continuous
+        return item_ids.to(device), item_discrete.to(device), item_continuous.to(device)
 
     def transform_scene_features(self, df_batch, scene_discrete_cols):
         """转换场景特征（三塔专用）"""
@@ -191,7 +193,7 @@ class FeatureProcessor:
         scene_discrete = torch.stack(scene_discrete_list, dim=1) if scene_discrete_list else \
             torch.zeros((len(df_batch), 0), dtype=torch.long)
 
-        return scene_discrete
+        return scene_discrete.to(device)
 
     def transform_stat_features(self, df_batch, stat_cont_cols):
         """转换统计特征（三塔专用）"""
@@ -200,4 +202,4 @@ class FeatureProcessor:
 
         stat_cont_values = self.stat_cont_scaler.transform(df_batch[stat_cont_cols].values)
         stat_continuous = torch.tensor(stat_cont_values, dtype=torch.float32)
-        return stat_continuous
+        return stat_continuous.to(device)
