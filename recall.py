@@ -220,16 +220,16 @@ class ClassificationRecommender:
         Returns:
             召回的物品id列表
         """
-        recalled_items = []
+        recalled_items_ids = []
 
         for category in user_categories:
             if category in self.category_index:
                 # 从对应类目中取出topk个物品
                 category_items = self.category_index[category][:topk]
-                recalled_items.extend(category_items)
+                recalled_items_ids.extend([item.item_id for item in category_items])
 
         # 去重并返回
-        return set(recalled_items)
+        return set(recalled_items_ids)
 
     def keyword_recall(self, user_keywords, topk=10):
         """
@@ -240,16 +240,16 @@ class ClassificationRecommender:
         Returns:
             召回的物品列表
         """
-        recalled_items = []
+        recalled_items_ids = []
 
         for keyword in user_keywords:
             if keyword in self.keyword_index:
                 # 从对应关键词中取出topk个物品
                 keyword_items = self.keyword_index[keyword][:topk]
-                recalled_items.extend(keyword_items)
+                recalled_items_ids.extend([item.item_id for item in keyword_items])
 
         # 去重并返回
-        return set(recalled_items)
+        return set(recalled_items_ids)
 
     def classification_recommend(self, user_profile, topk_per_channel=10):
         """
@@ -367,7 +367,7 @@ class ClusteringRecommender:
         similar_items = [item[0] for item in similarities[:m]]
         return similar_items
 
-    def clustering_recommend(self, user_profile, last_n=20, m=10)->set[Item]:
+    def clustering_recommend(self, user_profile, last_n=20, m=10)->set[int]:
         """
         基于聚类的召回方法
         Args:
@@ -387,7 +387,7 @@ class ClusteringRecommender:
             return set()
 
         # 存储召回的物品（去重）
-        recalled_items = set()
+        recalled_items_ids = set()
 
         # 对每个种子物品进行处理
         for item_id in recent_item_ids:
@@ -404,10 +404,9 @@ class ClusteringRecommender:
 
             # 添加到召回结果中（去重）
             for item in similar_items:
-                if item not in recalled_items:
-                    recalled_items.add(item)
+                recalled_items_ids.add(item)
 
-        return recalled_items
+        return recalled_items_ids
 
 class ColdStartRecommender:
     """
@@ -429,7 +428,7 @@ class ColdStartRecommender:
         # 类目和关键词
         self.classification_recommender.build_indices()
 
-    def cold_start_recommend(self)->set[Item]:
+    def cold_start_recommend(self)->set[int]:
         # 聚类
         clustering_recalls=self.clustering_recommender.clustering_recommend(user_profile=self.user_profile, last_n=50, m=10)
         # 类目和关键词
@@ -439,7 +438,7 @@ class ColdStartRecommender:
 
 def recall(items,interactions,df_train,id_item_dict,user_profile):
     """召回系统"""
-    print("开始召回...\n")
+    print("recall...")
     # ===============================================
     # =================== 召回 =======================
     # ===============================================
@@ -447,14 +446,12 @@ def recall(items,interactions,df_train,id_item_dict,user_profile):
     cf_recommender = CFRecommender()
     cf_recommender.fit(interactions,10)
     cf_recall_items_ids=cf_recommender.cf_recommend(user_profile.user_id,50)
-    cf_recall_items=set([id_item_dict[id] for id in cf_recall_items_ids])
-    print("cf_recall:",len(cf_recall_items))
     # 冷启动召回
     cold_start_recommender = ColdStartRecommender(user_profile, items,5)
     cold_start_recommender.fit()
-    cold_recall_items=cold_start_recommender.cold_start_recommend()
-    print("cold_recall:",len(cold_recall_items))
+    cold_recall_items_ids=cold_start_recommender.cold_start_recommend()
     # 双塔模型召回
+    # ======= 这里单独定义各特征列名，是因为双塔模型需要的特征与三塔模型不同，三塔模型还会自己定义一个 ========
     user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
     user_continuous_cols = ['age']
     item_discrete_cols = ['name','city','item_categories', 'item_keywords']
@@ -473,14 +470,14 @@ def recall(items,interactions,df_train,id_item_dict,user_profile):
         user_continuous_cols,
         top_k=10
     )
-    twin_recall_items = set([id_item_dict[id] for id in twin_recall_items_ids])
     # 合并去重
-    middle_items=cf_recall_items.union(cold_recall_items)
-    recall_items=middle_items.union(twin_recall_items)
+    middle_items_ids=cf_recall_items_ids.union(cold_recall_items_ids)
+    recall_items_ids=middle_items_ids.union(twin_recall_items_ids)
     # ========= 显示召回结果 =========
     print(f"用户ID: {user_profile.user_id}")
-    print(f"召回了共 {len(recall_items)} 个物品\n")
+    print(f"召回了共 {len(recall_items_ids)} 个物品,ID为:",end='')
+    print(recall_items_ids)
 
-    print("召回完成\n")
+    print("recall finished\n")
 
-    return recall_items
+    return recall_items_ids
