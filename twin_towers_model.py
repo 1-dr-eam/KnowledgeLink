@@ -308,7 +308,6 @@ def train_twin_towers_model(df_train,user_discrete_cols,user_continuous_cols,ite
             optimizer.step()
             total_loss += loss.item()
 
-        print(f"Epoch {epoch + 1}, Avg Loss: {total_loss / len(dataloader):.4f}")
     print("twin towers model training finished")
 
     return model, processor
