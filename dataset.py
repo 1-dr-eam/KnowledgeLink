@@ -59,7 +59,7 @@ class ThreeTowerDataset(Dataset):
     def __init__(self, df, processor,
                  user_discrete_cols, item_discrete_cols,
                  scene_discrete_cols, user_cont_cols, item_cont_cols, stat_cont_cols,
-                 target_cols):
+                 target_cols=None):
         self.df = df.reset_index(drop=True)
         self.processor = processor
         self.user_discrete_cols = user_discrete_cols
