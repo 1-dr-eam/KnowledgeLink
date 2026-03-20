@@ -10,7 +10,7 @@ device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class Item:
     """物品类，表示系统中的内容项"""
     def __init__(self, item_id, name, categories, keywords,discrete_features,
-                 continuous_features,created_time,image,description,content_feature=None):
+                 continuous_features,created_time,image,description,content_feature=None,relevance_score=None):
         """
         初始化物品类
         Args:
@@ -36,7 +36,9 @@ class Item:
 
         self.image = image
         self.description = description
+        # 基于内容的向量表征
         self.content_feature = content_feature
+        self.relevance_score = relevance_score
 
     def calculate_content_feature(self,model,preprocess):
         response = requests.get(self.image, stream=True)
