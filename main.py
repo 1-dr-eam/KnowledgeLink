@@ -1,8 +1,8 @@
-import pandas as pd
 from entities import *
 from recall import recall
 from rough_ranking import train_three_towers_model,rough_ranking
 from fine_ranking import train_multi_task_model,fine_ranking
+from rearrangement import MmrDiversity
 
 def main():
     """主流程"""
@@ -14,7 +14,7 @@ def main():
     clip_model, preprocess = clip.load("ViT-B/32", device=device)
     # 准备物品数据
     items = []
-    id_item_dict = {}
+    id_item_dict = {} # item_id:item
     df_items = pd.read_csv("data/items.csv", encoding="utf-8")
     for index, row in df_items.iterrows():
         # 这里使用冗余策略，如item_categories既直接保存在categories属性中，又保存在discrete_features中
@@ -50,7 +50,7 @@ def main():
     # =================================================
     # 对第一个用户做推荐
     # 其中包含了双塔模型训练与推荐
-    recall_items_ids=recall(items.copy(),interactions.copy(),df_train.copy(),id_item_dict,users[0])
+    recall_items_ids=recall(items.copy(),interactions.copy(),df_train.copy(),users[0])
     # =================================================
     # ==================== 粗排 ========================
     # =================================================
@@ -82,6 +82,22 @@ def main():
     df_multi_task['is_holiday'] = [0] * len(df_multi_task)
     item_id_score=fine_ranking(multi_task_model,multi_task_processor,df_multi_task)
     print("精排分数：",item_id_score)
+    # =================================================
+    # ==================== 重排 ========================
+    # =================================================
+    print("rearrangement...")
+    # 给精排传下来的精排分数赋值到对象属性中
+    rearrangement_items=[]
+    for item in items:
+        if item.item_id in item_id_score:
+            item.relevance_score=item_id_score[item.item_id]
+            rearrangement_items.append(item)
+    lambda_param = 0.7  # 平衡相关性和多样性的参数
+    selection_count = 5  # 选择物品数量
+    window_size = 3  # 滑动窗口大小
+    mmr_diversity = MmrDiversity(rearrangement_items, lambda_param, selection_count, window_size)
+    final_selected_items = mmr_diversity.mmr_diversity_selection()
+    print("最终推荐的物品及顺序：",final_selected_items)
 
 if __name__ == '__main__':
     main()
