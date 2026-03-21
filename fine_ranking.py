@@ -97,133 +97,131 @@ class MultiTaskNet(nn.Module):
             task_outputs.append(score)
         return task_outputs
 
-def train_multi_task_model(df):
-    """训练多目标模型"""
-    print("multi-task model training...")
+class FineRankingRecommender:
+    def __init__(self):
+        self.model = None
+        self.processor = None
+        # 特征列定义
+        self.user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
+        self.user_cont_cols = ['age']
+        self.item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
+        self.item_cont_cols = ['price']
+        self.scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
+        self.stat_cont_cols = ['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m',
+                          'item_click_last3m', 'item_cart_last3m', 'item_buy_last3m', 'item_forward_last3m']
+        self.target_cols = ['click', 'cart', 'forward', 'buy']
 
-    # 定义特征列
-    user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
-    user_cont_cols = ['age']
-    item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
-    item_cont_cols = ['price']
-    scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
-    stat_cont_cols = ['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m',
-                      'item_click_last3m', 'item_cart_last3m', 'item_buy_last3m', 'item_forward_last3m']
-    target_cols = ['click', 'cart', 'forward', 'buy']
+    def train_multi_task_model(self,df_train):
+        """训练多目标模型"""
+        print("multi-task model training...")
+        # 使用特征处理器
+        processor = FeatureProcessor()
+        processor.build_vocab_and_scale(df_train,
+                                        self.user_discrete_cols, self.item_discrete_cols,
+                                        self.user_cont_cols, self.item_cont_cols,
+                                        self.scene_discrete_cols, self.stat_cont_cols)
 
-    # 使用特征处理器
-    processor = FeatureProcessor()
-    processor.build_vocab_and_scale(df,
-                                    user_discrete_cols, item_discrete_cols,
-                                    user_cont_cols, item_cont_cols,
-                                    scene_discrete_cols, stat_cont_cols)
+        # Dataset中包含数据的transform操作
+        train_dataset = ThreeTowerDataset(df_train, processor,
+                                          self.user_discrete_cols, self.item_discrete_cols,
+                                          self.scene_discrete_cols, self.user_cont_cols, self.item_cont_cols, self.stat_cont_cols,
+                                          self.target_cols)
+        # 创建数据加载器
+        train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_three_towers)
 
-    # Dataset中包含数据的transform操作
-    train_dataset = ThreeTowerDataset(df, processor,
-                                      user_discrete_cols, item_discrete_cols,
-                                      scene_discrete_cols, user_cont_cols, item_cont_cols, stat_cont_cols,
-                                      target_cols)
-    # 创建数据加载器
-    train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_three_towers)
+        # ========== 定义模型 ==========
+        model = MultiTaskNet(
+            n_users=len(processor.user_id_vocab),
+            n_items=len(processor.item_id_vocab),
+            user_discrete_sizes=[len(processor.user_discrete_vocab[col]) for col in self.user_discrete_cols],
+            user_cont_dim=len(self.user_cont_cols),
+            scene_discrete_sizes=[len(processor.scene_discrete_vocab[col]) for col in self.scene_discrete_cols],
+            item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in self.item_discrete_cols],
+            item_cont_dim=len(self.item_cont_cols),
+            stat_cont_dim=len(self.stat_cont_cols),
+            hidden_dims=[128, 64, 32],
+            n_tasks=len(self.target_cols)
+        )
 
-    # ========== 定义模型 ==========
-    model = MultiTaskNet(
-        n_users=len(processor.user_id_vocab),
-        n_items=len(processor.item_id_vocab),
-        user_discrete_sizes=[len(processor.user_discrete_vocab[col]) for col in user_discrete_cols],
-        user_cont_dim=len(user_cont_cols),
-        scene_discrete_sizes=[len(processor.scene_discrete_vocab[col]) for col in scene_discrete_cols],
-        item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in item_discrete_cols],
-        item_cont_dim=len(item_cont_cols),
-        stat_cont_dim=len(stat_cont_cols),
-        hidden_dims=[128, 64, 32],
-        n_tasks=len(target_cols)
-    )
+        # ========== 定义损失函数和优化器 ==========
+        # 使用交叉熵损失
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        model.to(device)
+        # ========= 4. 训练循环 =========
+        num_epochs = 50
+        # 训练阶段
+        model.train()
+        for epoch in range(num_epochs):
+            for batch in train_loader:
+                # 获取数据
+                user_ids = batch['user_ids'].to(device)
+                user_discrete = batch['user_discrete'].to(device)
+                user_continuous = batch['user_continuous'].unsqueeze(1).to(device)
+                scene_discrete = batch['scene_discrete'].to(device)
+                item_ids = batch['item_ids'].to(device)
+                item_discrete = batch['item_discrete'].to(device)
+                item_continuous = batch['item_continuous'].unsqueeze(1).to(device)
+                stat_continuous = batch['stat_continuous'].to(device)
+                targets = batch['targets'].to(device)
 
-    # ========== 定义损失函数和优化器 ==========
-    # 使用交叉熵损失
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    model.to(device)
-    # ========= 4. 训练循环 =========
-    num_epochs = 50
-    best_val_loss = float('inf')
-    # 训练阶段
-    model.train()
-    for epoch in range(num_epochs):
-        for batch in train_loader:
-            # 获取数据
-            user_ids = batch['user_ids'].to(device)
-            user_discrete = batch['user_discrete'].to(device)
-            user_continuous = batch['user_continuous'].unsqueeze(1).to(device)
-            scene_discrete = batch['scene_discrete'].to(device)
-            item_ids = batch['item_ids'].to(device)
-            item_discrete = batch['item_discrete'].to(device)
-            item_continuous = batch['item_continuous'].unsqueeze(1).to(device)
-            stat_continuous = batch['stat_continuous'].to(device)
-            targets = batch['targets'].to(device)
+                # 前向传播
+                task_outputs = model(
+                    user_ids, user_discrete, user_continuous,
+                    item_ids, item_discrete, item_continuous,
+                    scene_discrete, stat_continuous
+                )
 
-            # 前向传播
-            task_outputs = model(
-                user_ids, user_discrete, user_continuous,
-                item_ids, item_discrete, item_continuous,
-                scene_discrete,stat_continuous
-            )
+                # 计算多任务损失
+                total_loss = 0.0
+                for i, output in enumerate(task_outputs):
+                    task_loss = criterion(output.squeeze(), targets[:, i])
+                    total_loss += task_loss
 
-            # 计算多任务损失
-            total_loss = 0.0
-            for i, output in enumerate(task_outputs):
-                task_loss = criterion(output.squeeze(), targets[:, i])
-                total_loss += task_loss
+                # 反向传播
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
 
-            # 反向传播
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
+        self.model=model
+        self.processor=processor
 
-    print("multi-task model training finished")
+        print("multi-task model training finished")
 
-    return model,processor
+    def fine_ranking(self, df)->dict:
+        """
+        直接利用 df 构造输入数据，原始特征->预处理->转tensor输入多目标模型
+        """
+        if self.model is None or self.processor is None:
+            raise ValueError("请先调用train_multi_task_model训练多目标模型")
 
-def fine_ranking(model, processor, df)->dict:
-    """
-    直接利用 df 构造输入数据，原始特征->预处理->转tensor输入多目标模型
-    """
-    print("fine ranking...")
-    # ============ 特征列定义 ===========
-    user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
-    user_continuous_cols = ['age']
-    item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
-    item_continuous_cols = ['price']
-    scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
-    stat_cont_cols = ['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m',
-                      'item_click_last3m', 'item_cart_last3m', 'item_buy_last3m', 'item_forward_last3m']
-    model.eval()
-    item_index_score = dict()  # 物品精排分数字典，{item_index:score}
-    # 这里因为要处理的物品较少，最多只有几百个，因此不分batch直接一次性计算
-    # 转换特征
-    user_ids, user_discrete, user_continuous = processor.transform_user_features(
-        df, user_discrete_cols, user_continuous_cols)  # 离散特征ID转索引，连续特征归一化
+        print("fine ranking...")
+        self.model.eval()
+        item_index_score = dict()  # 物品精排分数字典，{item_index:score}
+        # 这里因为要处理的物品较少，最多只有几百个，因此不分batch直接一次性计算
+        # 转换特征
+        user_ids, user_discrete, user_continuous = self.processor.transform_user_features(
+            df, self.user_discrete_cols, self.user_cont_cols)  # 离散特征ID转索引，连续特征归一化
 
-    scene_discrete = processor.transform_scene_features(df, scene_discrete_cols)
+        scene_discrete = self.processor.transform_scene_features(df, self.scene_discrete_cols)
 
-    item_ids, item_discrete, item_continuous = processor.transform_item_features(
-        df, item_discrete_cols, item_continuous_cols)
+        item_ids, item_discrete, item_continuous = self.processor.transform_item_features(
+            df, self.item_discrete_cols, self.item_cont_cols)
 
-    stat_continuous = processor.transform_stat_features(df, stat_cont_cols)
-    click_pred, like_pred, collect_pred, forward_pred = model(
-        user_ids, user_discrete, user_continuous,
-        item_ids, item_discrete, item_continuous,
-        scene_discrete,stat_continuous
-    )
-    # 融分公式融合排序
-    for i in range(len(item_ids)):
-        # 这里的item_id其实是索引
-        item_index_score[int(item_ids[i])] = 0.4 * float(click_pred[i]) + 0.1 * float(like_pred[i]) + 0.3 * float(collect_pred[i]) + 0.2 * float(forward_pred[i])
-    # 带着精排分数返回，不做截断
-    index_id_dict = {index: id for id, index in processor.item_id_vocab.items()}
-    item_id_score={index_id_dict[index]:score for index,score in item_index_score.items()} # item_id->fine ranking score
+        stat_continuous = self.processor.transform_stat_features(df, self.stat_cont_cols)
+        click_pred, like_pred, collect_pred, forward_pred = self.model(
+            user_ids, user_discrete, user_continuous,
+            item_ids, item_discrete, item_continuous,
+            scene_discrete,stat_continuous
+        )
+        # 融分公式融合排序
+        for i in range(len(item_ids)):
+            # 这里的item_id其实是索引
+            item_index_score[int(item_ids[i])] = 0.4 * float(click_pred[i]) + 0.1 * float(like_pred[i]) + 0.3 * float(collect_pred[i]) + 0.2 * float(forward_pred[i])
+        # 带着精排分数返回，不做截断
+        index_id_dict = {index: id for id, index in self.processor.item_id_vocab.items()}
+        item_id_score={index_id_dict[index]:score for index,score in item_index_score.items()} # item_id->fine ranking score
 
-    print("fine ranking finished\n")
+        print("fine ranking finished\n")
 
-    return item_id_score
+        return item_id_score

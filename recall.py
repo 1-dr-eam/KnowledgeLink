@@ -4,7 +4,6 @@ from heapq import nlargest
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from twin_towers_model import *
 from entities import *
 
 class ItemCF:
@@ -169,14 +168,15 @@ class CFRecommender:
     def __init__(self):
         self.user_cf=UserCF()
         self.item_cf=ItemCF()
+        self.n_rec=50
 
     def fit(self, user_item_rating_list,top_k=10):
         self.user_cf.fit(user_item_rating_list,top_k)
         self.item_cf.fit(user_item_rating_list,top_k)
 
-    def cf_recommend(self, user_id, n_rec=50):
-        user_cf_recalls=self.user_cf.userCF_recommend(user_id, n_rec)
-        item_cf_recalls=self.item_cf.itemCF_recommend(user_id, n_rec)
+    def cf_recommend(self, user_id):
+        user_cf_recalls=self.user_cf.userCF_recommend(user_id, self.n_rec)
+        item_cf_recalls=self.item_cf.itemCF_recommend(user_id, self.n_rec)
         return user_cf_recalls.union(item_cf_recalls)
 
 class ClassificationRecommender:
@@ -412,15 +412,15 @@ class ColdStartRecommender:
     """
     封装类，封装用于冷启动的类目召回，关键词召回和内容向量聚类召回
     """
-    def __init__(self,user_profile, items,n_clusters=50):
-        self.items = items
-        self.user_profile = user_profile
+    def __init__(self,n_clusters=50):
+        self.items=[]
         self.clustering_recommender = ClusteringRecommender(n_clusters=n_clusters)
         self.classification_recommender = ClassificationRecommender()
 
-    def fit(self):
+    def fit(self,items):
+        self.items = items
         # 数据准备
-        for item in self.items:
+        for item in items:
             self.clustering_recommender.add_item(item)
             self.classification_recommender.add_item(item)
         # 聚类
@@ -428,56 +428,59 @@ class ColdStartRecommender:
         # 类目和关键词
         self.classification_recommender.build_indices()
 
-    def cold_start_recommend(self)->set[int]:
+    def cold_start_recommend(self,user_profile)->set[int]:
         # 聚类
-        clustering_recalls=self.clustering_recommender.clustering_recommend(user_profile=self.user_profile, last_n=50, m=10)
+        clustering_recalls=self.clustering_recommender.clustering_recommend(user_profile=user_profile, last_n=50, m=10)
         # 类目和关键词
-        classification_recalls=self.classification_recommender.classification_recommend(user_profile=self.user_profile,topk_per_channel=50)
+        classification_recalls=self.classification_recommender.classification_recommend(user_profile=user_profile,topk_per_channel=50)
         # 合并去重
         return classification_recalls.union(clustering_recalls)
 
-def recall(items,interactions,df_train,id_item_dict,user_profile):
-    """召回系统"""
-    print("recall...")
-    # ===============================================
-    # =================== 召回 =======================
-    # ===============================================
-    # 协同过滤召回
-    cf_recommender = CFRecommender()
-    cf_recommender.fit(interactions,10)
-    cf_recall_items_ids=cf_recommender.cf_recommend(user_profile.user_id,50)
-    # 冷启动召回
-    cold_start_recommender = ColdStartRecommender(user_profile, items,5)
-    cold_start_recommender.fit()
-    cold_recall_items_ids=cold_start_recommender.cold_start_recommend()
-    # 双塔模型召回
-    # ======= 这里单独定义各特征列名，是因为双塔模型需要的特征与三塔模型不同，三塔模型还会自己定义一个 ========
-    user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
-    user_continuous_cols = ['age']
-    item_discrete_cols = ['name','city','item_categories', 'item_keywords']
-    item_continuous_cols = ['price']
-    twin_towers_model, processor = train_twin_towers_model(df_train, user_discrete_cols, user_continuous_cols, item_discrete_cols,
-                                               item_continuous_cols)
-    # 创建推荐器实例
-    twin_recommender = TwoTowersModelRecommender(twin_towers_model, processor)
-    # 初始化物品特征向量库
-    twin_recommender.all_item_ids = []  # 在compute_all_item_vectors中会被填充
-    twin_recommender.compute_all_item_vectors(items, item_discrete_cols, item_continuous_cols)
-    # 执行推荐
-    twin_recall_items_ids = twin_recommender.recommend_for_user(
-        user_profile,
-        user_discrete_cols,
-        user_continuous_cols,
-        top_k=10
-    )
-    # 合并去重
-    middle_items_ids=cf_recall_items_ids.union(cold_recall_items_ids)
-    recall_items_ids=middle_items_ids.union(twin_recall_items_ids)
-    # ========= 显示召回结果 =========
-    print(f"用户ID: {user_profile.user_id}")
-    print(f"召回了共 {len(recall_items_ids)} 个物品,ID为:",end='')
-    print(recall_items_ids)
+class RecallRecommender:
+    def __init__(self):
+        self.items = None
+        self.interactions = None
+        # 参数
+        self.n_clusters = 5
+        self.cf_topk=10
+        # 各分推荐器
+        self.cf_recommender = CFRecommender()
+        self.cold_start_recommender = ColdStartRecommender(self.n_clusters)
+        self.twin_towers_model_recommender=TwoTowersModelRecommender()
 
-    print("recall finished\n")
+    def fit(self,items,interactions,df_train):
+        # 保存
+        self.items = items
+        self.interactions = interactions
+        # 推荐器初始化
+        self.cf_recommender.fit(interactions, self.cf_topk)
+        self.cold_start_recommender.fit(items)
+        self.twin_towers_model_recommender.train_twin_towers_model(df_train)
+        # 初始化物品特征向量库
+        self.twin_towers_model_recommender.compute_all_item_vectors(items)
 
-    return recall_items_ids
+    def recall(self,user_profile)->set[int]:
+        """
+        只需传入当前要进行推荐的用户的用户画像
+        """
+        print("recall...")
+        # 协同过滤召回
+        cf_recall_items_ids = self.cf_recommender.cf_recommend(user_profile.user_id)
+        # 冷启动召回
+        cold_recall_items_ids = self.cold_start_recommender.cold_start_recommend(user_profile)
+        # 双塔模型召回
+        twin_recall_items_ids = self.twin_towers_model_recommender.recommend_for_user(
+            user_profile,
+            top_k=10
+        )
+        # 合并去重
+        middle_items_ids = cf_recall_items_ids.union(cold_recall_items_ids)
+        recall_items_ids = middle_items_ids.union(twin_recall_items_ids)
+
+        print(f"用户ID: {user_profile.user_id}")
+        print(f"召回了共 {len(recall_items_ids)} 个物品,ID为:", end='')
+        print(recall_items_ids)
+
+        print("recall finished\n")
+
+        return recall_items_ids

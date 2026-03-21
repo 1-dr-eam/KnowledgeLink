@@ -6,25 +6,29 @@ from entities import *
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class MmrDiversity:
-    def __init__(self,items:List[Item],lambda_param=0.7, selection_count=30, window_size=5):
+    def __init__(self):
         """
         基于MMR（最大边际相关性）的多样性重排算法
         Args:
-            items: 所有物品对象的列表
             lambda_param: MMR平衡参数，控制相关性和多样性的权衡 (0 <= lambda <= 1)
             selection_count: 要选择的物品数量
             window_size: 滑动窗口大小
         """
-        self.items = items
-        self.lambda_param = lambda_param
-        self.selection_count = selection_count
-        self.window_size = window_size
+        self.items = []
+        self.lambda_param = 0.7
+        self.selection_count = 5
+        self.window_size = 3
         # 物品间的余弦相似度矩阵（基于内容）
         self.item_id_index = {} #在build_cosine_similarity_matrix填充，这里的index就是矩阵的index
-        self.cosine_similarity_matrix = self.build_cosine_similarity_matrix()
+        self.cosine_similarity_matrix = []
 
-    def build_cosine_similarity_matrix(self):
-        """离线计算所有物品间的余弦相似度（基于内容）"""
+    def build_cosine_similarity_matrix(self,items):
+        """
+        离线计算所有物品间的余弦相似度（基于内容）
+        Args:
+            items: 全体物品列表
+        """
+        self.items = items
         n=len(self.items)
         matrix = [[0]*n for _ in range(n)]
         for i in range(n):
@@ -33,16 +37,20 @@ class MmrDiversity:
                 sim=float(cosine_similarity(self.items[i].content_feature.cpu().detach().numpy(),self.items[j].content_feature.cpu().detach().numpy()))
                 matrix[i][j] = sim
                 matrix[j][i] = sim
-        return matrix
+        self.cosine_similarity_matrix=matrix
 
-    def mmr_diversity_selection(self)->List[Item]:
-        """执行MMR算法"""
-        if not self.items:
+    def mmr_diversity_selection(self,items)->List[Item]:
+        """
+        执行MMR算法
+        Args:
+            items: 精排传过来的item列表
+        """
+        if not items:
             return []
 
         # 初始化已选择物品列表
         selected_items = []
-        remaining_items = self.items.copy()
+        remaining_items = items.copy()
 
         # 第一个物品选择相关性最高的
         first_item = max(remaining_items, key=lambda x: x.relevance_score)

@@ -12,7 +12,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ======================================
 # ============== 双塔模型 ================
 # ======================================
-class TwoTowerModel(nn.Module):
+class TwoTowersModel(nn.Module):
     def __init__(self, n_users, n_items, user_discrete_sizes, item_discrete_sizes,
                  user_cont_dim, item_cont_dim, embed_dim=32, tower_hidden=[128, 64]):
         """
@@ -106,53 +106,113 @@ class TwoTowerModel(nn.Module):
         cos_sim = torch.sum(u_vec * i_vec, dim=1)
         return cos_sim
 
+
 class TwoTowersModelRecommender:
     """双塔模型在线召回器"""
-    def __init__(self, model, processor, device='cuda'):
-        """
-        初始化在线召回器
-        Args:
-            model: 训练好的双塔模型
-            processor: 特征处理器
-            device: 推理设备
-        """
-        self.model = model
-        self.processor = processor
-        self.device = device
+    def __init__(self):
+        self.model = None
+        self.processor = None
+        # 定义特征列名(双塔模型需要的特征与三塔模型不同)
+        self.user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
+        self.user_continuous_cols = ['age']
+        self.item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
+        self.item_continuous_cols = ['price']
+        # 推荐需要用到的数据结构
         self.all_item_vectors = None  # 预计算的所有物品特征向量
-        self.all_item_ids = None  # 所有物品ID列表
+        self.all_item_ids = []  # 所有物品ID列表
         self.item_features = {}  # 物品ID到物品特征的映射
 
-    def preprocess_user_feature(self, user_feature, user_discrete_cols, user_continuous_cols):
+    def train_twin_towers_model(self,df_train):
+        # ============ 预处理 ============
+        processor = FeatureProcessor()
+        processor.build_vocab_and_scale(
+            df_train, self.user_discrete_cols, self.item_discrete_cols,
+            self.user_continuous_cols, self.item_continuous_cols
+        )
+
+        # ========== 模型与数据加载器 ==========
+        model = TwoTowersModel(
+            n_users=len(processor.user_id_vocab),
+            n_items=len(processor.item_id_vocab),
+            user_discrete_sizes=[len(processor.user_discrete_vocab[col]) for col in self.user_discrete_cols],
+            item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in self.item_discrete_cols],
+            user_cont_dim=len(self.user_continuous_cols),
+            item_cont_dim=len(self.item_continuous_cols),
+            embed_dim=32,
+            tower_hidden=[128, 64]
+        )
+        optimizer = optim.Adam(model.parameters(), lr=1e-3)
+        criterion = nn.MSELoss()
+        model.to(device)
+
+        dataset = TwoTowerDataset(
+            df_train, processor,
+            self.user_discrete_cols, self.item_discrete_cols,
+            self.user_continuous_cols, self.item_continuous_cols,
+            n_neg=2
+        )
+        dataloader = DataLoader(dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_two_towers)
+
+        # ========== 训练循环 ==========
+        for epoch in range(10):
+            model.train()
+            total_loss = 0
+            for batch in dataloader:
+                user_feat = [x.to(device) for x in batch['user_feat']]
+                pos_item_feat = [x.to(device) for x in batch['pos_item_feat']]
+                neg_item_feats = [[x.to(device) for x in neg] for neg in batch['neg_item_feats']]
+
+                pos_score = model(*user_feat, *pos_item_feat)
+                neg_scores = []
+                for neg_feat in neg_item_feats:
+                    neg_score = model(*user_feat, *neg_feat)
+                    neg_scores.append(neg_score)
+                neg_scores = torch.stack(neg_scores, dim=1)
+
+                batch_size = pos_score.size(0)
+                targets = torch.cat([
+                    torch.ones(batch_size, 1, device=device),
+                    -torch.ones(batch_size, 2, device=device)
+                ], dim=1)
+                all_scores = torch.cat([pos_score.unsqueeze(1), neg_scores], dim=1)
+                loss = criterion(all_scores, targets)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+
+        self.model = model
+        self.processor = processor
+
+        print("twin towers model training finished")
+
+    def preprocess_user_feature(self, user_profile):
         """
         预处理用户特征，转换为模型输入格式
         Args:
-            user_feature: UserFeature对象
-            user_discrete_cols: 用户离散特征列名列表
-            user_continuous_cols: 用户连续特征列名列表
+            user_profile: 用户画像
         Returns:
             处理后的用户特征张量 (user_ids, user_discrete, user_continuous)
         """
         # 针对字典的**解包操作，构造单行Dataframe对象
         user_df = pd.DataFrame([{
-            'user_id': user_feature.user_id,
-            **user_feature.discrete_features,
-            **user_feature.continuous_features
+            'user_id': user_profile.user_id,
+            **user_profile.discrete_features,
+            **user_profile.continuous_features
         }])
 
         user_ids, user_discrete, user_cont = self.processor.transform_user_features(
-            user_df, user_discrete_cols, user_continuous_cols
+            user_df, self.user_discrete_cols, self.user_continuous_cols
         )
 
-        return user_ids.to(self.device), user_discrete.to(self.device), user_cont.to(self.device)
+        return user_ids.to(device), user_discrete.to(device), user_cont.to(device)
 
-    def preprocess_item_feature(self, item_feature, item_discrete_cols, item_continuous_cols):
+    def preprocess_item_feature(self, item_feature):
         """
         预处理物品特征，转换为模型输入格式
         Args:
             item_feature: ItemFeature对象
-            item_discrete_cols: 物品离散特征列名列表
-            item_continuous_cols: 物品连续特征列名列表
         Returns:
             处理后的物品特征张量 (item_ids, item_discrete, item_continuous)
         """
@@ -163,18 +223,16 @@ class TwoTowersModelRecommender:
         }])
 
         item_ids, item_discrete, item_cont = self.processor.transform_item_features(
-            item_df, item_discrete_cols, item_continuous_cols
+            item_df, self.item_discrete_cols, self.item_continuous_cols
         )
 
-        return item_ids.to(self.device), item_discrete.to(self.device), item_cont.to(self.device)
+        return item_ids.to(device), item_discrete.to(device), item_cont.to(device)
 
-    def compute_all_item_vectors(self, all_item_features, item_discrete_cols, item_continuous_cols):
+    def compute_all_item_vectors(self, all_item_features):
         """
         离线计算所有物品的特征向量
         Args:
             all_item_features: 所有物品特征列表
-            item_discrete_cols: 物品离散特征列名列表
-            item_continuous_cols: 物品连续特征列名列表
         """
         print("正在计算所有物品的特征向量...")
 
@@ -187,9 +245,7 @@ class TwoTowersModelRecommender:
             # 存储物品特征映射和所有物品ID列表
             self.item_features[item_feat.item_id] = item_feat
             self.all_item_ids.append(item_feat.item_id)
-            item_ids, item_discrete, item_cont = self.preprocess_item_feature(
-                item_feat, item_discrete_cols, item_continuous_cols
-            )
+            item_ids, item_discrete, item_cont = self.preprocess_item_feature(item_feat)
             item_ids_list.append(item_ids)
             item_discrete_list.append(item_discrete)
             item_continuous_list.append(item_cont)
@@ -208,24 +264,21 @@ class TwoTowersModelRecommender:
 
         print(f"完成计算，共{len(self.all_item_ids)}个物品的特征向量")
 
-    def recommend_for_user(self, user_feature, user_discrete_cols, user_continuous_cols, top_k=10):
+    def recommend_for_user(self, user_profile,top_k=10):
         """
         为特定用户进行召回
         Args:
-            user_feature: UserFeature对象
-            user_discrete_cols: 用户离散特征列名列表
-            user_continuous_cols: 用户连续特征列名列表
+            user_profile: 用户画像
             top_k: 召回物品数量
         Returns:
             召回的物品ID列表
         """
         if self.all_item_vectors is None:
             raise ValueError("请先调用compute_all_item_vectors计算所有物品特征向量")
-
+        if self.model is None or self.processor is None:
+            raise ValueError("请先调用train_twin_towers_model训练双塔模型")
         # 计算用户特征向量
-        user_ids, user_discrete, user_continuous = self.preprocess_user_feature(
-            user_feature, user_discrete_cols, user_continuous_cols
-        )
+        user_ids, user_discrete, user_continuous = self.preprocess_user_feature(user_profile)
 
         self.model.eval()
         with torch.no_grad():
@@ -243,71 +296,3 @@ class TwoTowersModelRecommender:
         recommended_item_ids = [self.all_item_ids[i] for i in top_indices.cpu().numpy()]
 
         return set(recommended_item_ids)
-
-# ==============================================
-# ================= 训练双塔模型 =================
-# ==============================================
-def train_twin_towers_model(df_train,user_discrete_cols,user_continuous_cols,item_discrete_cols,item_continuous_cols):
-    # ============ 预处理 ============
-    processor = FeatureProcessor()
-    processor.build_vocab_and_scale(
-        df_train, user_discrete_cols, item_discrete_cols,
-        user_continuous_cols, item_continuous_cols
-    )
-
-    # ========== 模型与数据加载器 ==========
-    model = TwoTowerModel(
-        n_users=len(processor.user_id_vocab),
-        n_items=len(processor.item_id_vocab),
-        user_discrete_sizes=[len(processor.user_discrete_vocab[col]) for col in user_discrete_cols],
-        item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in item_discrete_cols],
-        user_cont_dim=len(user_continuous_cols),
-        item_cont_dim=len(item_continuous_cols),
-        embed_dim=32,
-        tower_hidden=[128, 64]
-    )
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    criterion = nn.MSELoss()
-
-    model.to(device)
-
-    dataset = TwoTowerDataset(
-        df_train, processor,
-        user_discrete_cols, item_discrete_cols,
-        user_continuous_cols, item_continuous_cols,
-        n_neg=2
-    )
-    dataloader = DataLoader(dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_two_towers)
-
-    # ========== 训练循环 ==========
-    for epoch in range(10):
-        model.train()
-        total_loss = 0
-        for batch in dataloader:
-            user_feat = [x.to(device) for x in batch['user_feat']]
-            pos_item_feat = [x.to(device) for x in batch['pos_item_feat']]
-            neg_item_feats = [[x.to(device) for x in neg] for neg in batch['neg_item_feats']]
-
-            pos_score = model(*user_feat, *pos_item_feat)
-            neg_scores = []
-            for neg_feat in neg_item_feats:
-                neg_score = model(*user_feat, *neg_feat)
-                neg_scores.append(neg_score)
-            neg_scores = torch.stack(neg_scores, dim=1)
-
-            batch_size = pos_score.size(0)
-            targets = torch.cat([
-                torch.ones(batch_size, 1, device=device),
-                -torch.ones(batch_size, 2, device=device)
-            ], dim=1)
-            all_scores = torch.cat([pos_score.unsqueeze(1), neg_scores], dim=1)
-            loss = criterion(all_scores, targets)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-
-    print("twin towers model training finished")
-
-    return model, processor

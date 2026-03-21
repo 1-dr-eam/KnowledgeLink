@@ -9,9 +9,9 @@ from dataset import ThreeTowerDataset
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ---------------------
-# 三塔模型
-# ---------------------
+# =========================================
+# ================= 三塔模型 ================
+# =========================================
 class ThreeTowerModel(nn.Module):
     def __init__(self,
                  # 用户塔参数
@@ -116,147 +116,145 @@ class ThreeTowerModel(nn.Module):
         click_pred, like_pred, collect_pred, forward_pred = outputs
         return click_pred, like_pred, collect_pred, forward_pred
 
-def train_three_towers_model(df_train):
-    """训练三塔模型"""
-    # ========== 特征列定义 ==========
-    user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
-    user_continuous_cols = ['age']
-    item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
-    item_continuous_cols = ['price']
-    scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
-    stat_cont_cols = ['user_click_last3m','user_cart_last3m','user_buy_last3m','user_forward_last3m',
-                      'item_click_last3m','item_cart_last3m','item_buy_last3m','item_forward_last3m']
-    target_cols = ['click', 'cart', 'forward', 'buy']
+class RoughRankingRecommender:
+    def __init__(self):
+        self.model = None
+        self.processor = None
+        # 特征列定义
+        self.user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
+        self.user_continuous_cols = ['age']
+        self.item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
+        self.item_continuous_cols = ['price']
+        self.scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
+        self.stat_cont_cols = ['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m',
+                          'item_click_last3m', 'item_cart_last3m', 'item_buy_last3m', 'item_forward_last3m']
+        self.target_cols = ['click', 'cart', 'forward', 'buy']
 
-    # ========= 3. 特征预处理 =========
-    processor = FeatureProcessor()
-    processor.build_vocab_and_scale(df_train,
-                                    user_discrete_cols, item_discrete_cols,
-                                    user_continuous_cols, item_continuous_cols,
-                                    scene_discrete_cols,stat_cont_cols)
+    def train_three_towers_model(self,df_train):
+        """训练三塔模型"""
+        # ========== 特征预处理 ==========
+        processor = FeatureProcessor()
+        processor.build_vocab_and_scale(df_train,
+                                        self.user_discrete_cols, self.item_discrete_cols,
+                                        self.user_continuous_cols, self.item_continuous_cols,
+                                        self.scene_discrete_cols, self.stat_cont_cols)
 
-    # ========= 4. 数据加载器 =========
-    train_dataset = ThreeTowerDataset(df_train, processor,
-                                      user_discrete_cols, item_discrete_cols,
-                                      scene_discrete_cols, user_continuous_cols, item_continuous_cols, stat_cont_cols,
-                                      target_cols)
+        # ========= 4. 数据加载器 =========
+        train_dataset = ThreeTowerDataset(df_train, processor,
+                                          self.user_discrete_cols, self.item_discrete_cols,
+                                          self.scene_discrete_cols, self.user_continuous_cols, self.item_continuous_cols,
+                                          self.stat_cont_cols,
+                                          self.target_cols)
 
-    train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_three_towers)
+        train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_three_towers)
 
-    # ========= 5. 模型初始化 =========
-    model = ThreeTowerModel(
-        n_users=len(processor.user_id_vocab),
-        n_items=len(processor.item_id_vocab),
-        user_discrete_sizes=[len(processor.user_discrete_vocab[col]) for col in user_discrete_cols],
-        user_cont_dim=len(user_continuous_cols),
-        scene_discrete_sizes=[len(processor.scene_discrete_vocab[col]) for col in scene_discrete_cols],
-        item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in item_discrete_cols],
-        item_cont_dim=len(item_continuous_cols),
-        stat_cont_dim=len(stat_cont_cols),
-        user_tower_hidden=[64, 32],
-        item_tower_hidden=[32, 16],
-        cross_tower_hidden=[16],
-        mlp_hidden=[16, 16],
-        n_tasks=4
-    )
+        # ========== 模型初始化 ==========
+        model = ThreeTowerModel(
+            n_users=len(processor.user_id_vocab),
+            n_items=len(processor.item_id_vocab),
+            user_discrete_sizes=[len(processor.user_discrete_vocab[col]) for col in self.user_discrete_cols],
+            user_cont_dim=len(self.user_continuous_cols),
+            scene_discrete_sizes=[len(processor.scene_discrete_vocab[col]) for col in self.scene_discrete_cols],
+            item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in self.item_discrete_cols],
+            item_cont_dim=len(self.item_continuous_cols),
+            stat_cont_dim=len(self.stat_cont_cols),
+            user_tower_hidden=[64, 32],
+            item_tower_hidden=[32, 16],
+            cross_tower_hidden=[16],
+            mlp_hidden=[16, 16],
+            n_tasks=4
+        )
 
-    # ========= 6. 训练配置 =========
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    criterion = nn.CrossEntropyLoss()  # 交叉熵损失
-    model.to(device)
+        # ========== 训练配置 ==========
+        optimizer = optim.Adam(model.parameters(), lr=1e-3)
+        criterion = nn.CrossEntropyLoss()  # 交叉熵损失
+        model.to(device)
 
-    # ========= 7. 训练循环 =========
-    num_epochs = 10
-    for epoch in range(num_epochs):
-        # 训练
-        model.train()
-        total_train_loss = 0
-        for batch in train_loader:
-            # 获取数据
-            user_ids = batch['user_ids'].to(device)
-            user_discrete = batch['user_discrete'].to(device)
-            user_continuous = batch['user_continuous'].unsqueeze(1).to(device) # (B)->(B,1)，使得下面cat可以正常进行
-            scene_discrete = batch['scene_discrete'].to(device)
-            item_ids = batch['item_ids'].to(device)
-            item_discrete = batch['item_discrete'].to(device)
-            item_continuous = batch['item_continuous'].unsqueeze(1).to(device)
-            stat_continuous = batch['stat_continuous'].to(device)
-            targets = batch['targets'].to(device)
+        # ========== 训练循环 ==========
+        num_epochs = 10
+        for epoch in range(num_epochs):
+            # 训练
+            model.train()
+            for batch in train_loader:
+                # 获取数据
+                user_ids = batch['user_ids'].to(device)
+                user_discrete = batch['user_discrete'].to(device)
+                user_continuous = batch['user_continuous'].unsqueeze(1).to(device)  # (B)->(B,1)，使得下面cat可以正常进行
+                scene_discrete = batch['scene_discrete'].to(device)
+                item_ids = batch['item_ids'].to(device)
+                item_discrete = batch['item_discrete'].to(device)
+                item_continuous = batch['item_continuous'].unsqueeze(1).to(device)
+                stat_continuous = batch['stat_continuous'].to(device)
+                targets = batch['targets'].to(device)
 
-            # 前向传播(传入的数据是带batch的)
-            click_pred, like_pred, collect_pred, forward_pred = model(
+                # 前向传播(传入的数据是带batch的)
+                click_pred, like_pred, collect_pred, forward_pred = model(
+                    user_ids, user_discrete, user_continuous, scene_discrete,
+                    item_ids, item_discrete, item_continuous,
+                    stat_continuous
+                )
+
+                # 计算损失
+                loss_click = criterion(click_pred, targets[:, 0])
+                loss_like = criterion(like_pred, targets[:, 1])
+                loss_collect = criterion(collect_pred, targets[:, 2])
+                loss_forward = criterion(forward_pred, targets[:, 3])
+
+                # 总损失
+                total_loss = loss_click + loss_like + loss_collect + loss_forward
+
+                # 反向传播
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
+
+        self.model=model
+        self.processor=processor
+
+        print("three towers model training finished")
+
+    def rough_ranking(self,df):
+        """
+            直接利用 df 构造输入数据，原始特征->预处理->转tensor输入三塔模型
+            """
+        if self.model is None or self.processor is None:
+            raise ValueError("请先调用train_three_towers_model训练三塔模型")
+
+        print("rough ranking...")
+        self.model.eval()
+        item_score = dict()  # 物品粗排分数字典，{item_id:score}
+        for i in range(0, len(df), 100):
+            df_batch = df.iloc[i:i + 100] if i + 100 < len(df) else df.iloc[i:]
+            # 转换特征
+            user_ids, user_discrete, user_continuous = self.processor.transform_user_features(
+                df_batch, self.user_discrete_cols, self.user_continuous_cols)  # 离散特征ID转索引，连续特征归一化
+
+            scene_discrete = self.processor.transform_scene_features(df_batch, self.scene_discrete_cols)
+
+            item_ids, item_discrete, item_continuous = self.processor.transform_item_features(
+                df_batch, self.item_discrete_cols, self.item_continuous_cols)
+
+            stat_continuous = self.processor.transform_stat_features(df_batch, self.stat_cont_cols)
+            # 带batch维度，一次性计算
+            click_pred, like_pred, collect_pred, forward_pred = self.model(
                 user_ids, user_discrete, user_continuous, scene_discrete,
                 item_ids, item_discrete, item_continuous,
                 stat_continuous
             )
+            # 融分公式融合排序
+            for i in range(len(item_ids)):
+                # 这里的item_id其实是索引
+                item_score[item_ids[i]] = 0.4 * click_pred[i] + 0.1 * like_pred[i] + 0.3 * collect_pred[i] + 0.2 * \
+                                          forward_pred[i]
+        # 根据粗排分数截断返回
+        topn = heapq.nlargest(5, item_score.items(), key=lambda x: x[1])
+        indexs = set([int(x[0]) for x in topn])
+        index_id_dict = {index: id for id, index in self.processor.item_id_vocab.items()}
+        ids = set()
+        for index in indexs:
+            ids.add(index_id_dict[index])
 
-            # 计算损失
-            loss_click = criterion(click_pred, targets[:, 0])
-            loss_like = criterion(like_pred, targets[:, 1])
-            loss_collect = criterion(collect_pred, targets[:, 2])
-            loss_forward = criterion(forward_pred, targets[:, 3])
+        print("粗排后剩余物品ID:", ids)
+        print("rough ranking finished\n")
 
-            # 总损失
-            total_loss = loss_click + loss_like + loss_collect + loss_forward
-
-            # 反向传播
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
-
-            total_train_loss += total_loss.item()
-
-    print("three towers model training finished")
-
-    return model, processor
-
-def rough_ranking(model,processor,df)->set[int]:
-    """
-    直接利用 df 构造输入数据，原始特征->预处理->转tensor输入三塔模型
-    """
-    print("rough ranking...")
-    # ============ 特征列定义 ===========
-    user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
-    user_continuous_cols = ['age']
-    item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
-    item_continuous_cols = ['price']
-    scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
-    stat_cont_cols = ['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m',
-                      'item_click_last3m', 'item_cart_last3m', 'item_buy_last3m', 'item_forward_last3m']
-    model.eval()
-    item_score = dict()  # 物品粗排分数字典，{item_id:score}
-    for i in range(0,len(df),100):
-        df_batch = df.iloc[i:i+100] if i+100 < len(df) else df.iloc[i:]
-        # 转换特征
-        user_ids, user_discrete, user_continuous = processor.transform_user_features(
-                df_batch, user_discrete_cols, user_continuous_cols)  # 离散特征ID转索引，连续特征归一化
-
-        scene_discrete = processor.transform_scene_features(df_batch, scene_discrete_cols)
-
-        item_ids, item_discrete, item_continuous = processor.transform_item_features(
-                df_batch, item_discrete_cols, item_continuous_cols)
-
-        stat_continuous = processor.transform_stat_features(df_batch, stat_cont_cols)
-        # 带batch维度，一次性计算
-        click_pred, like_pred, collect_pred, forward_pred = model(
-            user_ids, user_discrete, user_continuous, scene_discrete,
-            item_ids, item_discrete, item_continuous,
-            stat_continuous
-        )
-        # 融分公式融合排序
-        for i in range(len(item_ids)):
-            # 这里的item_id其实是索引
-            item_score[item_ids[i]] = 0.4 * click_pred[i] + 0.1 * like_pred[i] + 0.3 * collect_pred[i] + 0.2 * \
-                                      forward_pred[i]
-    # 根据粗排分数截断返回
-    topn = heapq.nlargest(5, item_score.items(), key=lambda x: x[1])
-    indexs = set([int(x[0]) for x in topn])
-    index_id_dict={index:id for id,index in processor.item_id_vocab.items()}
-    ids=set()
-    for index in indexs:
-        ids.add(index_id_dict[index])
-
-    print("粗排后剩余物品ID:",ids)
-    print("rough ranking finished\n")
-
-    return ids
+        return ids
