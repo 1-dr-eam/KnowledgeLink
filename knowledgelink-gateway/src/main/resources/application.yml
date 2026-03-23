@@ -1,0 +1,18 @@
+server:
+  port: 8080
+
+# 日志配置
+logging:
+  charset:
+    console: UTF-8
+    file: UTF-8
+  level:
+    com.github.gateway: debug
+  file:
+    name: logs/KnowledgeLink-gateway.log
+  logback:
+    rolling policy:
+      max-file-size: 10MB
+      max-history: 360
+      total-size-cap: 1GB
+      clean-history-on-start: false

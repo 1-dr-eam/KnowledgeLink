@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: knowledgelink-gateway
+  cloud:
+    nacos:
+      server-addr: 175.27.129.187:8848
+      discovery:
+        server-addr: ${spring.cloud.nacos.server-addr}
+        namespace: fb675f2e-6b9d-4030-8276-c9e7dd6ddbb1
+      config:
+        server-addr: ${spring.cloud.nacos.server-addr}
+        file-extension: yaml
+        namespace: fb675f2e-6b9d-4030-8276-c9e7dd6ddbb1
+        group: gateway-dev
+  config:
+    import:
+      - optional:nacos:gateway-route.yaml
+      - optional:nacos:gateway-auth.yaml
+      - optional:nacos:jwt.yaml?group=common-dev
