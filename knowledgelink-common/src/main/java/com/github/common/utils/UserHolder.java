@@ -15,10 +15,13 @@ public class UserHolder {
     }
 
     public static UserDTO getUser(){
-        UserDTO userDTO = new UserDTO();
-        userDTO.setId(1L);
-        return userDTO;
-//        return tl.get();
+        UserDTO userDTO = tl.get();
+        if (userDTO != null) {
+            return userDTO;
+        }
+        UserDTO defaultUser = new UserDTO();
+        defaultUser.setId(1L);
+        return defaultUser;
     }
 
     public static void removeUser(){

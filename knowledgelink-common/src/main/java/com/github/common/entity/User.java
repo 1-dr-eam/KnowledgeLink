@@ -19,5 +19,4 @@ public class User {
     private final String grade;
     private String avatar;
     private String summary;
-    private double balance;
 }
