@@ -132,6 +132,7 @@ class RoughRankingRecommender:
 
     def train_three_towers_model(self,df_train):
         """训练三塔模型"""
+        print("three towers model training...")
         # ========== 特征预处理 ==========
         processor = FeatureProcessor()
         processor.build_vocab_and_scale(df_train,
