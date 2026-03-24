@@ -123,6 +123,7 @@ class TwoTowersModelRecommender:
         self.item_features = {}  # 物品ID到物品特征的映射
 
     def train_twin_towers_model(self,df_train):
+        print("twin towers model training...")
         # ============ 预处理 ============
         processor = FeatureProcessor()
         processor.build_vocab_and_scale(
