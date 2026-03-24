@@ -59,13 +59,17 @@ class Item:
             rgb_img = img.convert('RGB')
         else:
             raise IOError("读取图片数据失败")
-        image_tensor = preprocess(rgb_img).unsqueeze(0).to(device) # torch.Size([1, 3, 224, 224])
-        text_tensor = clip.tokenize(self.description).to(device) # torch.Size([1, 77])
 
-        image_feature=model.encode_image(image_tensor) # torch.Size([1, 512])
-        text_feature=model.encode_text(text_tensor) # torch.Size([1, 512])
-        content_feature=torch.cat((image_feature,text_feature),dim=1) # torch.Size([1,1024])
-        self.content_feature=content_feature
+        with torch.no_grad():#非训练不需要梯度，节省显存
+            image_tensor = preprocess(rgb_img).unsqueeze(0).to(device) # torch.Size([1, 3, 224, 224])
+            text_tensor = clip.tokenize(self.description).to(device) # torch.Size([1, 77])
+
+            image_feature=model.encode_image(image_tensor) # torch.Size([1, 512])
+            text_feature=model.encode_text(text_tensor) # torch.Size([1, 512])
+            content_feature=torch.cat((image_feature,text_feature),dim=1)# torch.Size([1,1024])
+            content_feature_cpu=content_feature.cpu() # 显存不够存储，转移到CPU上
+            self.content_feature=content_feature_cpu
+            del content_feature # 释放显存中的tensor空间
 
     def __repr__(self):
         return str({'item_id':self.item_id, 'name':self.name,'keywords':self.keywords,'description':self.description,'relevance_score':self.relevance_score})
