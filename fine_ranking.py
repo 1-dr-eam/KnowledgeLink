@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from feature_processor import FeatureProcessor
 from dataset import ThreeTowerDataset
 from utils import collate_fn_three_towers
+from DCN import DCN
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -20,7 +21,7 @@ class MultiTaskNet(nn.Module):
                  # 统计特征
                  stat_cont_dim,
                  # 主干神经网络部分
-                 hidden_dims=[128, 64, 32],
+                 hidden_dims=[128, 64],
                  n_tasks=4):
         super().__init__()
 
@@ -44,21 +45,17 @@ class MultiTaskNet(nn.Module):
         total_input_dim = user_input_dim + item_input_dim + scene_input_dim + cross_input_dim
 
         # 主干网络
-        layers = []
-        prev_dim = total_input_dim
-        for hidden_dim in hidden_dims:
-            layers.extend([nn.Linear(prev_dim, hidden_dim), nn.ReLU()])
-            prev_dim = hidden_dim
-
-        self.backbone = nn.Sequential(*layers)
+        hidden_dims = [128,64]
+        self.backbone = DCN(2,total_input_dim,hidden_dims).to(device) # 输出维度是hidden_dims[-1]
 
         # 多任务头
         self.task_heads = []
+        prev_dim=hidden_dims[-1]
         for task_idx in range(n_tasks):
             task_head = nn.Sequential(
-                nn.Linear(prev_dim, 16),
+                nn.Linear(prev_dim, 32),
                 nn.ReLU(),
-                nn.Linear(16, 1),
+                nn.Linear(32, 1),
                 nn.Sigmoid()  # 使用Sigmoid激活函数适用于二分类
             ).to(device)
             self.task_heads.append(task_head)
