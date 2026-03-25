@@ -1,0 +1,19 @@
+server:
+  port: 8086
+  servlet:
+    context-path: /user
+
+spring:
+  application:
+    name: knowledgelink-user
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+logging:
+  level:
+    com.github.user: debug
