@@ -4,6 +4,8 @@ from torch import optim
 from utils import bpr_loss
 from dataset import GraphDataset
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 class LightGCN(nn.Module):
     def __init__(self,n_layers,n_users,n_items,embed_dim,adj_matrix):
         """
@@ -19,7 +21,7 @@ class LightGCN(nn.Module):
         self.n_users=n_users
         self.n_items=n_items
         self.embed_dim=embed_dim
-        self.adj_matrix=adj_matrix
+        self.adj_matrix=adj_matrix.to(device)
         self.user_embedding = nn.Parameter(torch.zeros(n_users,embed_dim)) # 没有显式的嵌入层，直接定义等价的查找表，这个相当于就是第一层embedding之后的结果
         self.item_embedding = nn.Parameter(torch.zeros(n_items,embed_dim)) # ID为基础的推荐系统embedding常见实现方式
         nn.init.xavier_uniform_(self.user_embedding) # Xavier均匀初始化,避免训练初始梯度消失
@@ -49,15 +51,16 @@ class LightGCNRecommender(nn.Module):
         self.topk=5
 
     def train_light_gcn(self,n_layers,user_ids,item_ids,embed_dim,df_interactions):
+        print("LightGCN training...")
         self.dataset=GraphDataset(user_ids,item_ids,df_interactions)
-        self.model = LightGCN(n_layers, len(user_ids), len(item_ids), embed_dim, self.dataset.norm_adj_matrix)
+        self.model = LightGCN(n_layers, len(user_ids), len(item_ids), embed_dim, self.dataset.norm_adj_matrix).to(device)
         # train
         epochs = 10
         batch_size = 5
         batch_num = 10  # 注意这里不是所有batch加起来是对所有数据过了一遍，因为generate是随机采样
-        self.model.train()
         optimizer = optim.Adam(self.model.parameters(), lr=0.001, weight_decay=1e-4)  # weight_decay内置了L2正则化
         for i in range(epochs):
+            self.model.train()
             sum_loss = 0.0
             for j in range(batch_num):
                 user_emb, item_emb = self.model.forward()
@@ -76,6 +79,7 @@ class LightGCNRecommender(nn.Module):
 
                 sum_loss += loss.item()
             # print(f"epoch{i} bpr_loss: {sum_loss / batch_num}")
+        print("LightGCN training finished")
 
     def compute_embeddings(self):
         self.users_embedding, self.items_embedding = self.model.forward()

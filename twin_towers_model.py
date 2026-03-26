@@ -141,10 +141,9 @@ class TwoTowersModelRecommender:
             item_cont_dim=len(self.item_continuous_cols),
             embed_dim=32,
             tower_hidden=[128, 64]
-        )
+        ).to(device)
         optimizer = optim.Adam(model.parameters(), lr=1e-3)
         criterion = nn.MSELoss()
-        model.to(device)
 
         dataset = TwoTowerDataset(
             df_train, processor,

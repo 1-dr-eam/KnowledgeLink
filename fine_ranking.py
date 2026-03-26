@@ -45,7 +45,6 @@ class MultiTaskNet(nn.Module):
         total_input_dim = user_input_dim + item_input_dim + scene_input_dim + cross_input_dim
 
         # 主干网络
-        hidden_dims = [128,64]
         self.backbone = DCN(2,total_input_dim,hidden_dims).to(device) # 输出维度是hidden_dims[-1]
 
         # 多任务头
@@ -138,13 +137,12 @@ class FineRankingRecommender:
             stat_cont_dim=len(self.stat_cont_cols),
             hidden_dims=[128, 64, 32],
             n_tasks=len(self.target_cols)
-        )
+        ).to(device)
 
         # ========== 定义损失函数和优化器 ==========
         # 使用交叉熵损失
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=0.001)
-        model.to(device)
         # ========= 4. 训练循环 =========
         num_epochs = 10
         # 训练阶段

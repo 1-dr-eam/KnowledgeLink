@@ -164,12 +164,11 @@ class RoughRankingRecommender:
             cross_tower_hidden=[16],
             mlp_hidden=[16, 16],
             n_tasks=4
-        )
+        ).to(device)
 
         # ========== 训练配置 ==========
         optimizer = optim.Adam(model.parameters(), lr=1e-3)
         criterion = nn.CrossEntropyLoss()  # 交叉熵损失
-        model.to(device)
 
         # ========== 训练循环 ==========
         num_epochs = 10
