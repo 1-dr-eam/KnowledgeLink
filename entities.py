@@ -2,18 +2,19 @@ from collections import deque
 from PIL import Image
 from io import BytesIO
 import requests
-from twin_towers_model import *
+import torch
 import clip
 
 device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class Item:
     """物品类，表示系统中的内容项"""
-    def __init__(self, item_id, name, categories, keywords,discrete_features,
+    def __init__(self, item_idx,item_id, name, categories, keywords,discrete_features,
                  continuous_features,created_time,image,description,content_feature=None,relevance_score=None):
         """
         初始化物品类
         Args:
+            item_idx : 物品索引
             item_id: 物品ID
             name: 物品标题
             categories: 物品所属类目列表
@@ -25,6 +26,7 @@ class Item:
             description: 物品文字描述
             content_feature: 基于内容的特征向量
         """
+        self.item_idx=item_idx
         self.item_id = item_id
         self.name = name
         self.categories = categories
@@ -76,11 +78,12 @@ class Item:
 
 class UserProfile:
     """用户画像类"""
-    def __init__(self, user_id, categories=None, keywords=None, discrete_features=None,
+    def __init__(self, user_idx,user_id, categories=None, keywords=None, discrete_features=None,
                  continuous_features=None,max_history=50):
         """
         初始化用户画像
         Args:
+            user_idx: 用户索引 (0-n_users)
             user_id: 用户ID
             categories: 用户感兴趣的类目列表
             keywords: 用户感兴趣的关键词列表
@@ -88,6 +91,7 @@ class UserProfile:
             discrete_features: 离散特征字典，如 {'gender': 'M'}
             continuous_features: 连续特征字典，如 {'age': 25}
         """
+        self.user_idx = user_idx
         self.user_id = user_id
         self.categories = categories  # 存储用户感兴趣的类目
         self.keywords = keywords  # 存储用户感兴趣的关键词
