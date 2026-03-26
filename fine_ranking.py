@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from feature_processor import FeatureProcessor
 from dataset import ThreeTowerDataset
 from utils import collate_fn_three_towers
@@ -146,7 +146,7 @@ class FineRankingRecommender:
         optimizer = optim.Adam(model.parameters(), lr=0.001)
         model.to(device)
         # ========= 4. 训练循环 =========
-        num_epochs = 50
+        num_epochs = 10
         # 训练阶段
         model.train()
         for epoch in range(num_epochs):
@@ -219,6 +219,7 @@ class FineRankingRecommender:
         index_id_dict = {index: id for id, index in self.processor.item_id_vocab.items()}
         item_id_score={index_id_dict[index]:score for index,score in item_index_score.items()} # item_id->fine ranking score
 
+        print("精排分数字典：",item_id_score)
         print("fine ranking finished\n")
 
         return item_id_score
