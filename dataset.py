@@ -2,6 +2,8 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 import random
+import numpy as np
+from scipy.sparse import bmat, csr_matrix
 
 # ----------------------------
 # 数据集类（支持负采样 1:2）
@@ -104,3 +106,70 @@ class ThreeTowerDataset(Dataset):
             'stat_continuous': stat_continuous.squeeze(),
             'targets': targets
         }
+
+class GraphDataset(Dataset):
+    def __init__(self, users_ids,items_ids,df_interactions):
+        self.user2idx={id:index for index,id in enumerate(users_ids)}
+        self.item2idx={id:index for index,id in enumerate(items_ids)}
+        self.user_ids=users_ids # 全体用户id列表
+        self.real_user_ids=df_interactions['user_id'].unique().tolist() # 存在交互记录的用户id列表
+        self.n_users=len(users_ids)
+        self.n_items=len(items_ids)
+        self.norm_adj_matrix=self.build_norm_adj_matrix(df_interactions)
+        # 以下数据用于训练时的正负样本采样
+        self.user2items=df_interactions[['user_id','item_id']].groupby('user_id')['item_id'].apply(list).to_dict() # {user_id:[item_ids]}表示用户交互过的物品ids
+        self.items_ids = items_ids
+
+    def build_norm_adj_matrix(self,df_interactions:pd.DataFrame):
+        user_indices = [self.user2idx[id] for id in df_interactions['user_id']]
+        item_indices = [self.item2idx[id] for id in df_interactions['item_id']]
+        R = csr_matrix((np.ones(len(user_indices)), (user_indices, item_indices)),
+                       shape=(self.n_users, self.n_items))
+        R.data = (R.data > 0).astype(float) # 有重复记录的话csr_matrix会自动相加，所以要做重新二值化
+
+        zero_1=csr_matrix((self.n_users,self.n_users))
+        zero_2=csr_matrix((self.n_items,self.n_items))
+        A=bmat([[zero_1,R],[R.T,zero_2]],format='csr') # R是用户对物品的，R.T是物品对用户的，以CSR格式存储稀疏矩阵
+        degree = np.array(A.sum(axis=1)).flatten()
+        degree[degree==0]=1e-10 # 防止除0（孤立节点）
+        # normalization
+        row_idxs,col_idxs = A.nonzero()
+        row_degrees,col_degrees = degree[row_idxs],degree[col_idxs]
+        data=1.0/np.sqrt(row_degrees*col_degrees)
+        A.data=data
+        # 转tensor格式
+        A_coo = A.tocoo()
+
+        indices = torch.LongTensor(np.array([A_coo.row, A_coo.col]))
+        values = torch.FloatTensor(A_coo.data)
+        shape = torch.Size(A_coo.shape)
+
+        norm_adj_tensor = torch.sparse_coo_tensor(indices, values, shape)
+
+        return norm_adj_tensor
+
+    def generate_batch(self,batch_size):
+        batch_user_ids=random.sample(self.real_user_ids,batch_size)
+        pos_item_idxs=[]
+        neg_item_idxs=[]
+        for user_id in batch_user_ids:
+            pos_item_idx=self.item2idx[random.choice(self.user2items[user_id])]
+            neg_item_idx=self.item2idx[random.choice(self.items_ids)]
+            pos_item_idxs.append(pos_item_idx)
+            neg_item_idxs.append(neg_item_idx)
+        user_idxs=[self.user2idx[user_id] for user_id in batch_user_ids]
+
+        return torch.LongTensor(user_idxs),torch.LongTensor(pos_item_idxs),torch.LongTensor(neg_item_idxs)
+
+if __name__ == '__main__':
+    # 准备物品数据
+    df_items = pd.read_csv("data/items.csv", encoding="utf-8")
+    # 准备用户数据
+    df_users = pd.read_csv("data/users.csv", encoding="utf-8")
+    # 准备交互数据
+    df_interactions = pd.read_csv("data/interactions.csv", encoding="utf-8")
+    graph_dataset=GraphDataset(list(df_users['user_id']),list(df_items['item_id']),df_interactions)
+
+
+
+
