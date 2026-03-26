@@ -60,21 +60,7 @@ def collate_fn_three_towers(batch):
         'targets': targets
     }
 
-# ==========================================
-# =================== 重排 ==================
-# ==========================================
-def print_selection_results(original_items, selected_items, lambda_param, selection_count):
-    """打印选择结果"""
-    print(f"MMR多样性重排算法结果")
-    print(f"参数: λ={lambda_param}, 选择数量={selection_count}")
-    print("=" * 60)
-
-    print("原始物品列表（按相关性排序）:")
-    sorted_original = sorted(original_items, key=lambda x: x.relevance_score, reverse=True)
-    for i, item in enumerate(sorted_original[:10]):  # 显示前10个
-        print(f"  ID: {item.id:2d}, 相关性: {item.relevance_score:.3f}, 描述: {item.text}")
-
-    print("\nMMR重排后的物品列表:")
-    for i, item in enumerate(selected_items):
-        print(f"  位置: {i + 1:2d}, ID: {item.id:2d}, "
-              f"相关性: {item.relevance_score:.3f}, 描述: {item.text}")
+def bpr_loss(pos_scores,neg_scores)->torch.Tensor:
+    diff=pos_scores-neg_scores
+    bpr=-1.0*torch.sum(torch.log(torch.sigmoid(diff)))
+    return bpr
