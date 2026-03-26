@@ -1,3 +1,4 @@
+import pandas as pd
 from entities import *
 from recall import RecallRecommender
 from rough_ranking import RoughRankingRecommender
@@ -9,14 +10,16 @@ class RecommenderSystem:
         # 需要用到的各种数据
         self.items=[]
         self.id_item_dict={}
+        self.item_idx2id={}
         self.users=[]
-        self.interactions=[]
+        self.interactions=[] # [(user_id,item_id,rating)]
 
         self.df_items=pd.DataFrame()
         self.df_users=pd.DataFrame()
+        self.df_interactions=pd.DataFrame() # 只包含 user_id 和 item_id 的 Dataframe
         self.df_train=pd.DataFrame()
         # 各阶段的推荐器
-        self.recall_recommender=RecallRecommender()
+        self.recall_recommender=RecallRecommender(self.item_idx2id)
         self.rough_ranking_recommender=RoughRankingRecommender()
         self.fine_ranking_recommender=FineRankingRecommender()
         self.rearrangement_recommender=MmrDiversity()
@@ -30,34 +33,39 @@ class RecommenderSystem:
         for index, row in self.df_items.iterrows():
             # 这里使用冗余策略，如item_categories既直接保存在categories属性中，又保存在discrete_features中
             # 保存在discrete_features中是双塔模型训练需要，而直接保存在categories属性中是为了冷启动召回提速
-            item = Item(row["item_id"], row["name"], row["item_categories"].split('/'), row['item_keywords'].split(';')
+            item = Item(index,row["item_id"], row["name"], row["item_categories"].split('/'), row['item_keywords'].split(';')
                         , {'city': row['city'], 'name': row['name'], 'item_categories': row['item_categories'],
                            'item_keywords': row['item_keywords']},
                         {'price': row['price']}
                         , row["created_time"], row['image'], row['description'])
             self.id_item_dict[item.item_id] = item
+            self.item_idx2id[index]=item.item_id
             item.calculate_content_feature(clip_model, preprocess)
             self.items.append(item)
         # 准备用户数据
         self.df_users = pd.read_csv("data/users.csv", encoding="utf-8")
         for index, row in self.df_users.iterrows():
-            user = UserProfile(row["user_id"], row["user_categories"].split(';'), row["user_keywords"].split(';')
+            user = UserProfile(index,row["user_id"], row["user_categories"].split(';'), row["user_keywords"].split(';')
                                , {'gender': row['gender'], 'user_categories': row['user_categories'],
                                   'user_keywords': row['user_keywords']},
                                {'age': row['age']}, 50)
             self.users.append(user)
         # 准备交互数据
-        df_interactions = pd.read_csv("data/interactions.csv", encoding="utf-8")
-        for index, row in df_interactions.iterrows():
-            self.interactions.append((row['user_id'], row['item_id'], row['rating']))
+        self.df_interactions = pd.read_csv("data/interactions.csv", encoding="utf-8")
+        self.interactions=list(zip(
+            self.df_interactions['user_id'],
+            self.df_interactions['item_id'],
+            self.df_interactions['rating']
+        ))
         # 准备双塔模型，三塔模型和精排多目标模型训练数据(根据交互记录)
-        df_merge = pd.merge(df_interactions, self.df_users, how='left', on='user_id')
+        df_merge = pd.merge(self.df_interactions, self.df_users, how='left', on='user_id')
         self.df_train = pd.merge(df_merge, self.df_items, how='left', on='item_id')
         print("data finished\n")
 
     def fit(self):
         # 召回
-        self.recall_recommender.fit(self.items,self.interactions,self.df_train)
+        self.recall_recommender.fit(self.df_train,self.items,self.interactions,self.df_interactions
+                                    ,list(self.df_users['user_id']),list(self.df_items['item_id']))
         # 粗排
         self.rough_ranking_recommender.train_three_towers_model(self.df_train)
         # 精排
@@ -98,6 +106,7 @@ class RecommenderSystem:
         df_multi_task['is_holiday'] = [is_holiday] * len(df_multi_task)
         item_id_score = self.fine_ranking_recommender.fine_ranking(df_multi_task)
         # ============= 重排 ================
+        print("rearrangement...")
         rearrangement_items = []
         for item in self.items:
             if item.item_id in item_id_score:
@@ -105,6 +114,7 @@ class RecommenderSystem:
                 rearrangement_items.append(item)
         final_selected_items=self.rearrangement_recommender.mmr_diversity_selection(rearrangement_items)
         print("最终推荐的物品及顺序：", final_selected_items)
+        print("recommend finished\n")
 
 def main():
     """主流程"""

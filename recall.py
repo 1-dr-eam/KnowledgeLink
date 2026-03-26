@@ -5,6 +5,8 @@ from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from entities import *
+from twin_towers_model import TwoTowersModelRecommender
+from LightGCN import LightGCNRecommender
 
 class ItemCF:
     def __init__(self):
@@ -437,29 +439,40 @@ class ColdStartRecommender:
         return classification_recalls.union(clustering_recalls)
 
 class RecallRecommender:
-    def __init__(self):
+    def __init__(self,item_idx2id):
+        self.item_idx2id = item_idx2id
         self.items = None
         self.interactions = None
-        # 参数
+        # ============ 各项参数 ==============
+        # 聚类簇数
         self.n_clusters = 5
+        # topk
         self.cf_topk=10
+        self.twin_towers_model_topk=50
+        # LightGCN
+        self.n_layers=3
+        self.emb_dim=64
         # 各分推荐器
         self.cf_recommender = CFRecommender()
         self.cold_start_recommender = ColdStartRecommender(self.n_clusters)
         self.twin_towers_model_recommender=TwoTowersModelRecommender()
+        self.light_gcn_recommender = LightGCNRecommender(item_idx2id)
 
-    def fit(self,items,interactions,df_train):
-        # 保存
+    def fit(self,df_train,items,interactions,df_interactions,user_ids,item_ids):
         self.items = items
         self.interactions = interactions
         # 推荐器初始化
         self.cf_recommender.fit(interactions, self.cf_topk)
         self.cold_start_recommender.fit(items)
+        # 双塔
         self.twin_towers_model_recommender.train_twin_towers_model(df_train)
         # 初始化物品特征向量库
         self.twin_towers_model_recommender.compute_all_item_vectors(items)
+        # LightGCN
+        self.light_gcn_recommender.train_light_gcn(self.n_layers,user_ids,item_ids,self.emb_dim,df_interactions)
+        self.light_gcn_recommender.compute_embeddings()
 
-    def recall(self,user_profile)->set[int]:
+    def recall(self,user_profile:UserProfile)->set[int]:
         """
         只需传入当前要进行推荐的用户的用户画像
         """
@@ -471,11 +484,14 @@ class RecallRecommender:
         # 双塔模型召回
         twin_recall_items_ids = self.twin_towers_model_recommender.recommend_for_user(
             user_profile,
-            top_k=10
+            top_k=self.twin_towers_model_topk
         )
+        # lightGCN召回
+        light_gcn_recall_items_ids = self.light_gcn_recommender.recommend_for_user(user_profile.user_idx)
         # 合并去重
         middle_items_ids = cf_recall_items_ids.union(cold_recall_items_ids)
-        recall_items_ids = middle_items_ids.union(twin_recall_items_ids)
+        middle_items_ids = middle_items_ids.union(twin_recall_items_ids)
+        recall_items_ids = middle_items_ids.union(light_gcn_recall_items_ids)
 
         print(f"用户ID: {user_profile.user_id}")
         print(f"召回了共 {len(recall_items_ids)} 个物品,ID为:", end='')
