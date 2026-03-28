@@ -100,7 +100,7 @@ class FineRankingRecommender:
         # 特征列定义
         self.user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
         self.user_cont_cols = ['age']
-        self.item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
+        self.item_discrete_cols = ['name','author', 'city', 'item_categories', 'item_keywords']
         self.item_cont_cols = ['price']
         self.scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
         self.stat_cont_cols = ['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m',
@@ -143,8 +143,8 @@ class FineRankingRecommender:
         # 使用交叉熵损失
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=0.001)
-        # ========= 4. 训练循环 =========
-        num_epochs = 10
+        # =========== 训练循环 ============
+        num_epochs = 1
         # 训练阶段
         model.train()
         for epoch in range(num_epochs):
@@ -212,7 +212,8 @@ class FineRankingRecommender:
         # 融分公式融合排序
         for i in range(len(item_ids)):
             # 这里的item_id其实是索引
-            item_index_score[int(item_ids[i])] = 0.4 * float(click_pred[i]) + 0.1 * float(like_pred[i]) + 0.3 * float(collect_pred[i]) + 0.2 * float(forward_pred[i])
+            item_index_score[int(item_ids[i])] = (0.4 * float(click_pred[i].detach()) + 0.1 * float(like_pred[i].detach())
+                                                 + 0.3 * float(collect_pred[i].detach()) + 0.2 * float(forward_pred[i].detach()))
         # 带着精排分数返回，不做截断
         index_id_dict = {index: id for id, index in self.processor.item_id_vocab.items()}
         item_id_score={index_id_dict[index]:score for index,score in item_index_score.items()} # item_id->fine ranking score

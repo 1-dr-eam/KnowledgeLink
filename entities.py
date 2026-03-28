@@ -9,7 +9,7 @@ device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class Item:
     """物品类，表示系统中的内容项"""
-    def __init__(self, item_idx,item_id, name, categories, keywords,discrete_features,
+    def __init__(self, item_idx,item_id, name,author, categories, keywords,discrete_features,
                  continuous_features,created_time,image,description,content_feature=None,relevance_score=None):
         """
         初始化物品类
@@ -29,6 +29,7 @@ class Item:
         self.item_idx=item_idx
         self.item_id = item_id
         self.name = name
+        self.author=author
         self.categories = categories
         self.keywords = keywords
         self.created_time = created_time

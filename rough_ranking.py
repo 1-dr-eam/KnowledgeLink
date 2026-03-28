@@ -123,7 +123,7 @@ class RoughRankingRecommender:
         # 特征列定义
         self.user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
         self.user_continuous_cols = ['age']
-        self.item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
+        self.item_discrete_cols = ['name', 'author','city', 'item_categories', 'item_keywords']
         self.item_continuous_cols = ['price']
         self.scene_discrete_cols = ['hour', 'is_weekend', 'is_holiday']
         self.stat_cont_cols = ['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m',
@@ -171,7 +171,7 @@ class RoughRankingRecommender:
         criterion = nn.CrossEntropyLoss()  # 交叉熵损失
 
         # ========== 训练循环 ==========
-        num_epochs = 10
+        num_epochs = 1
         for epoch in range(num_epochs):
             # 训练
             model.train()

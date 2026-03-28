@@ -115,7 +115,7 @@ class TwoTowersModelRecommender:
         # 定义特征列名(双塔模型需要的特征与三塔模型不同)
         self.user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
         self.user_continuous_cols = ['age']
-        self.item_discrete_cols = ['name', 'city', 'item_categories', 'item_keywords']
+        self.item_discrete_cols = ['name','author', 'city', 'item_categories', 'item_keywords']
         self.item_continuous_cols = ['price']
         # 推荐需要用到的数据结构
         self.all_item_vectors = None  # 预计算的所有物品特征向量
@@ -154,7 +154,7 @@ class TwoTowersModelRecommender:
         dataloader = DataLoader(dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_two_towers)
 
         # ========== 训练循环 ==========
-        for epoch in range(10):
+        for epoch in range(1):
             model.train()
             total_loss = 0
             for batch in dataloader:
