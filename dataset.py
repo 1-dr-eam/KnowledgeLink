@@ -143,7 +143,8 @@ class GraphDataset(Dataset):
         indices = torch.LongTensor(np.array([A_coo.row, A_coo.col]))
         values = torch.FloatTensor(A_coo.data)
         shape = torch.Size(A_coo.shape)
-
+        # 禁用稀疏不变性检查（性能更好）
+        torch.sparse.check_sparse_tensor_invariants.disable()
         norm_adj_tensor = torch.sparse_coo_tensor(indices, values, shape)
 
         return norm_adj_tensor

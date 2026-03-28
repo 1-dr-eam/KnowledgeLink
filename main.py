@@ -29,29 +29,71 @@ class RecommenderSystem:
         # clip用于提取图片和文本特征，拼接成为物品内容特征向量
         clip_model, preprocess = clip.load("ViT-B/32", device=device)
         # 准备物品数据
-        self.df_items = pd.read_csv("data/items.csv", encoding="utf-8")
-        for index, row in self.df_items.iterrows():
-            # 这里使用冗余策略，如item_categories既直接保存在categories属性中，又保存在discrete_features中
-            # 保存在discrete_features中是双塔模型训练需要，而直接保存在categories属性中是为了冷启动召回提速
-            item = Item(index,row["item_id"], row["name"], row["item_categories"].split('/'), row['item_keywords'].split(';')
-                        , {'city': row['city'], 'name': row['name'], 'item_categories': row['item_categories'],
-                           'item_keywords': row['item_keywords']},
-                        {'price': row['price']}
-                        , row["created_time"], row['image'], row['description'])
+        self.df_items = pd.read_csv("data/items_final.csv", encoding="utf-8")
+        self.df_items['item_keywords'] = self.df_items['item_keywords'].apply(lambda x: tuple(x.split(';')))
+        print("开始构建物品索引...")
+        for row in self.df_items.itertuples(index=True):  # index=True 获取原始的 DataFrame 索引
+            item_idx = row.Index
+            # 构建 discrete_features 和 continuous_features 字典
+            discrete_features = {
+                'city': row.city,
+                'name': row.name,
+                'author': row.author,
+                'item_categories': row.item_categories,
+                'item_keywords': row.item_keywords
+            }
+            continuous_features = {'price': row.price}
+            # 创建 Item 对象
+            item = Item(
+                item_idx,
+                row.item_id,
+                row.name,
+                row.author,
+                row.item_categories,
+                row.item_keywords,
+                discrete_features,
+                continuous_features,
+                row.created_time,
+                row.image,
+                row.description
+            )
+            # 填充字典和列表
             self.id_item_dict[item.item_id] = item
-            self.item_idx2id[index]=item.item_id
+            self.item_idx2id[item_idx] = item.item_id
+            # 计算特征
             item.calculate_content_feature(clip_model, preprocess)
             self.items.append(item)
+        print("物品索引构建完成。")
         # 准备用户数据
-        self.df_users = pd.read_csv("data/users.csv", encoding="utf-8")
-        for index, row in self.df_users.iterrows():
-            user = UserProfile(index,row["user_id"], row["user_categories"].split(';'), row["user_keywords"].split(';')
-                               , {'gender': row['gender'], 'user_categories': row['user_categories'],
-                                  'user_keywords': row['user_keywords']},
-                               {'age': row['age']}, 50)
+        self.df_users = pd.read_csv("data/users_final.csv", encoding="utf-8")
+        self.df_users['user_categories'] = self.df_users['user_categories'].fillna('').apply(lambda x: tuple(x.split(';')))
+        self.df_users['user_keywords'] = self.df_users['user_keywords'].fillna('').apply(lambda x: tuple(x.split(';')))
+        print("开始构建用户画像...")
+        # itertuples 返回命名元组，访问速度极快
+        for row in self.df_users.itertuples(index=True):
+            # 获取原始索引
+            user_idx = row.Index
+            # 构建离散和连续特征字典
+            discrete_features = {
+                'gender': row.gender,
+                'user_categories': row.user_categories,
+                'user_keywords': row.user_keywords
+            }
+            continuous_features = {'age': row.age}
+            # 创建 UserProfile 对象
+            user = UserProfile(
+                user_idx,
+                row.user_id,
+                row.user_categories,
+                row.user_keywords,
+                discrete_features,
+                continuous_features,
+                50
+            )
             self.users.append(user)
+        print("用户画像构建完成。")
         # 准备交互数据
-        self.df_interactions = pd.read_csv("data/interactions.csv", encoding="utf-8")
+        self.df_interactions = pd.read_csv("data/interactions_final.csv", encoding="utf-8")
         self.interactions=list(zip(
             self.df_interactions['user_id'],
             self.df_interactions['item_id'],
