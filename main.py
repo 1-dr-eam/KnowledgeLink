@@ -1,3 +1,5 @@
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
 import pandas as pd
 from entities import *
 from recall import RecallRecommender
@@ -29,7 +31,7 @@ class RecommenderSystem:
         # clip用于提取图片和文本特征，拼接成为物品内容特征向量
         clip_model, preprocess = clip.load("ViT-B/32", device=device)
         # 准备物品数据
-        self.df_items = pd.read_csv("data/items_final.csv", encoding="utf-8")
+        self.df_items = pd.read_csv("data/items.csv", encoding="utf-8")
         self.df_items['item_keywords'] = self.df_items['item_keywords'].apply(lambda x: tuple(x.split(';')))
         print("开始构建物品索引...")
         for row in self.df_items.itertuples(index=True):  # index=True 获取原始的 DataFrame 索引
@@ -63,9 +65,9 @@ class RecommenderSystem:
             # 计算特征
             item.calculate_content_feature(clip_model, preprocess)
             self.items.append(item)
-        print("物品索引构建完成。")
+        print("物品索引构建完成")
         # 准备用户数据
-        self.df_users = pd.read_csv("data/users_final.csv", encoding="utf-8")
+        self.df_users = pd.read_csv("data/users.csv", encoding="utf-8")
         self.df_users['user_categories'] = self.df_users['user_categories'].fillna('').apply(lambda x: tuple(x.split(';')))
         self.df_users['user_keywords'] = self.df_users['user_keywords'].fillna('').apply(lambda x: tuple(x.split(';')))
         print("开始构建用户画像...")
@@ -91,9 +93,9 @@ class RecommenderSystem:
                 50
             )
             self.users.append(user)
-        print("用户画像构建完成。")
+        print("用户画像构建完成")
         # 准备交互数据
-        self.df_interactions = pd.read_csv("data/interactions_final.csv", encoding="utf-8")
+        self.df_interactions = pd.read_csv("data/interactions.csv", encoding="utf-8")
         self.interactions=list(zip(
             self.df_interactions['user_id'],
             self.df_interactions['item_id'],

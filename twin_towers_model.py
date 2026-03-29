@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -6,6 +7,7 @@ import pandas as pd
 from feature_processor import FeatureProcessor
 from utils import collate_fn_two_towers
 from dataset import TwoTowerDataset
+import faiss
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -92,7 +94,7 @@ class TwoTowersModel(nn.Module):
         emb_list.append(item_continuous)
         concat_feat = torch.cat(emb_list, dim=1)
         i_out = self.item_tower(concat_feat)
-        return nn.functional.normalize(i_out, p=2, dim=1)
+        return nn.functional.normalize(i_out, p=2, dim=1) # L2 归一化
 
     def forward(self, user_ids, user_discrete, user_continuous, item_ids, item_discrete, item_continuous):
         """
@@ -103,7 +105,7 @@ class TwoTowersModel(nn.Module):
         u_vec = self.forward_user(user_ids, user_discrete, user_continuous)
         i_vec = self.forward_item(item_ids, item_discrete, item_continuous)
         # 余弦相似度
-        cos_sim = torch.sum(u_vec * i_vec, dim=1)
+        cos_sim = torch.sum(u_vec * i_vec, dim=1) # 因为用户塔和物品塔的输出已经归一化，所以这里内积相当于余弦相似度
         return cos_sim
 
 
@@ -121,6 +123,7 @@ class TwoTowersModelRecommender:
         self.all_item_vectors = None  # 预计算的所有物品特征向量
         self.all_item_ids = []  # 所有物品ID列表
         self.item_features = {}  # 物品ID到物品特征的映射
+        self.faiss_index = None # faiss向量数据库索引
 
     def train_twin_towers_model(self,df_train):
         print("twin towers model training...")
@@ -261,38 +264,76 @@ class TwoTowersModelRecommender:
             self.all_item_vectors = self.model.forward_item(
                 all_item_ids, all_item_discrete, all_item_continuous
             )
-
         print(f"完成计算，共{len(self.all_item_ids)}个物品的特征向量")
 
-    def recommend_for_user(self, user_profile,top_k=10):
+    def initialize_faiss_index(self):
         """
-        为特定用户进行召回
+        初始化 Faiss 索引
+        计算好的物品特征向量存入向量数据库，后续用ANN高效匹配topk
+        """
+        print("twin towers model faiss index building...")
+        if self.all_item_vectors is None:
+            raise ValueError("请先调用 compute_all_item_vectors 计算所有物品特征向量")
+
+        # 获取向量维度
+        vector_dim = self.all_item_vectors.shape[1]
+        # 获取向量个数
+        n_vectors = self.all_item_vectors.shape[0]
+        # 转换为 numpy float32 格式，这是 Faiss 的标准格式
+        item_vectors_np = self.all_item_vectors.cpu().numpy().astype('float32')
+
+        # 根据物品数量选择索引类型
+        if n_vectors < 1000:  # 小数据量使用精确搜索
+            index = faiss.IndexFlatIP(vector_dim)  # 余弦相似度(向量已归一化)
+            index.add(item_vectors_np)
+        else:  # 大数据量使用近似搜索
+            # IVF (Inverted File) 参数
+            n_cluster = int(math.sqrt(n_vectors)) # 聚类中心数量
+            # PQ (Product Quantization) 参数
+            # M 是切分成的段数，因此向量维度要能整除M，物品塔的输出维度是32
+            M = 8
+            quantizer = faiss.IndexFlatIP(vector_dim)
+            index = faiss.IndexIVFPQ(quantizer, vector_dim, n_cluster, M, 8)
+            index.train(item_vectors_np)
+            index.add(item_vectors_np)
+
+        # 保存索引
+        self.faiss_index = index
+
+        print("twin towers model faiss index finished")
+
+    def fit(self,all_item_features):
+        self.compute_all_item_vectors(all_item_features)
+        self.initialize_faiss_index()
+
+    def recommend_for_user(self, user_profile, top_k=10):
+        """
+        使用 Faiss 向量数据库为特定用户进行召回
         Args:
             user_profile: 用户画像
             top_k: 召回物品数量
         Returns:
             召回的物品ID列表
         """
-        if self.all_item_vectors is None:
-            raise ValueError("请先调用compute_all_item_vectors计算所有物品特征向量")
-        if self.model is None or self.processor is None:
-            raise ValueError("请先调用train_twin_towers_model训练双塔模型")
-        # 计算用户特征向量
-        user_ids, user_discrete, user_continuous = self.preprocess_user_feature(user_profile)
+        if hasattr(self, 'faiss_index') and self.faiss_index is not None:
+            # 计算用户特征向量
+            user_ids, user_discrete, user_continuous = self.preprocess_user_feature(user_profile)
 
-        self.model.eval()
-        with torch.no_grad():
-            user_vector = self.model.forward_user(user_ids, user_discrete, user_continuous)
+            self.model.eval()
+            with torch.no_grad():
+                user_vector = self.model.forward_user(user_ids, user_discrete, user_continuous)
 
-        # 计算用户向量与所有物品向量的余弦相似度
-        # 使用矩阵乘法一次性计算所有相似度
-        similarities = torch.matmul(user_vector, self.all_item_vectors.T).squeeze(0)
+            # 转换为 numpy 格式并确保是 float32
+            user_vector_np = user_vector.cpu().numpy().astype('float32')
 
-        # 获取相似度最高的top_k个物品
-        top_k = min(top_k, len(similarities))
-        _, top_indices = torch.topk(similarities, top_k)
+            # 使用 Faiss 进行快速相似度搜索
+            # 设置搜索参数 (nprobe越大越精确但越慢)
+            self.faiss_index.nprobe = 5
+            # 搜索 top_k 个最相似的向量
+            distances, indices = self.faiss_index.search(user_vector_np, top_k)
 
-        # 用索引得到对应的物品ID
-        recommended_item_ids = [self.all_item_ids[i] for i in top_indices.cpu().numpy()]
-
-        return set(recommended_item_ids)
+            # 将返回的索引映射回原始物品ID
+            recommended_item_ids = [self.all_item_ids[i] for i in indices[0]]
+            return set(recommended_item_ids)
+        else:
+            raise ValueError("请先调用 initialize_faiss_index 构建 Faiss 索引")

@@ -38,8 +38,8 @@ class ItemCF:
                     a, b = items[i], items[j]
                     r_ua = item_rating_dict[a]
                     r_ub = item_rating_dict[b]
-                    weight = r_ua * r_ub
-                    cooccur[a][b] += weight
+                    weight = r_ua * r_ub # 乘积
+                    cooccur[a][b] += weight # 求和
                     cooccur[b][a] += weight  # 对称
 
         # Step 3: 计算余弦相似度
@@ -50,7 +50,7 @@ class ItemCF:
                 norm_i = self.item_norm_sq[item_i]
                 norm_j = self.item_norm_sq[item_j]
                 if norm_i > 0 and norm_j > 0:
-                    sim = c_ij / math.sqrt(norm_i * norm_j) # norm_i和norm_i已经是求和后的值了
+                    sim = c_ij / math.sqrt(norm_i * norm_j) # norm_i和norm_i已经是求和后的值了(这里是在做归一化)
                     self.item_sim_matrix[item_i][item_j] = sim
 
         # 构造关键索引2
@@ -69,7 +69,7 @@ class ItemCF:
             return []
 
         user_hist = self.user_items_rating[user_id]  # {item: rating}
-        item_scores = defaultdict(float) # # {item: score}
+        item_scores = defaultdict(float) # {item: score}
 
         for item_i, r_ui in user_hist.items():
             if item_i not in self.item_sim:
@@ -79,7 +79,7 @@ class ItemCF:
             for item_j, sim_score in top_neighbors.items():
                 if item_j in user_hist:
                     continue  # 不推荐已交互过的
-                item_scores[item_j] += r_ui * sim_score  # 加权累加，用户对某物品的交互等级*物品与物品的相似度
+                item_scores[item_j] += r_ui * sim_score  # 累加，用户对某物品的交互等级*物品与物品的相似度
 
         recs = nlargest(n_rec, item_scores.items(), key=lambda x: x[1]) # [(item:final_score)]
         res = [x[0] for x in recs]
@@ -191,17 +191,16 @@ class ClassificationRecommender:
         # 所有物品的映射（用于快速查找）{item_id:item}
         self.items_map = {}
 
-    def add_item(self, item):
+    def add_items(self, items):
         """添加物品到系统"""
-        self.items_map[item.item_id] = item
-
-        # 添加到类目索引
-        for category in item.categories:
-            self.category_index[category].append(item)
-
-        # 添加到关键词索引
-        for keyword in item.keywords:
-            self.keyword_index[keyword].append(item)
+        for item in items:
+            self.items_map[item.item_id] = item
+            # 添加到类目索引
+            for category in item.categories:
+                self.category_index[category].append(item)
+            # 添加到关键词索引
+            for keyword in item.keywords:
+                self.keyword_index[keyword].append(item)
 
     def build_indices(self):
         """构建索引（按创建时间倒序排列）"""
@@ -292,12 +291,12 @@ class ClusteringRecommender:
         self.all_item_features = []  # 所有物品的特征向量
         self.item_ids = []  # 物品ID列表，与特征向量顺序一致
 
-    def add_item(self, item):
-        """添加单条物品"""
-        self.items_map[item.item_id] = item
-        # 去除维度数为1的维度，即(1,1024)->(1024)
-        self.all_item_features.append(item.content_feature.squeeze())
-        self.item_ids.append(item.item_id)
+    def add_items(self, items):
+        """添加所有物品信息"""
+        for item in items:
+            self.items_map[item.item_id] = item
+            self.all_item_features.append(item.content_feature.squeeze())
+            self.item_ids.append(item.item_id)
 
     def fit_clustering(self):
         """训练聚类模型"""
@@ -422,9 +421,8 @@ class ColdStartRecommender:
     def fit(self,items):
         self.items = items
         # 数据准备
-        for item in items:
-            self.clustering_recommender.add_item(item)
-            self.classification_recommender.add_item(item)
+        self.clustering_recommender.add_items(items)
+        self.classification_recommender.add_items(items)
         # 聚类
         self.clustering_recommender.fit_clustering()
         # 类目和关键词
@@ -458,19 +456,18 @@ class RecallRecommender:
         self.twin_towers_model_recommender=TwoTowersModelRecommender()
         self.light_gcn_recommender = LightGCNRecommender(item_idx2id)
 
-    def fit(self,df_train,items,interactions,df_interactions,user_ids,item_ids):
+    def fit(self, df_train, items, interactions, df_interactions, user_ids, item_ids):
         self.items = items
         self.interactions = interactions
-        # 推荐器初始化
+        # 协同过滤和冷启动推荐器
         self.cf_recommender.fit(interactions, self.cf_topk)
         self.cold_start_recommender.fit(items)
-        # 双塔
+        # 双塔模型推荐器
         self.twin_towers_model_recommender.train_twin_towers_model(df_train)
-        # 初始化物品特征向量库
-        self.twin_towers_model_recommender.compute_all_item_vectors(items)
+        self.twin_towers_model_recommender.fit(items)  # 计算物品特征向量，加入faiss
         # LightGCN
-        self.light_gcn_recommender.train_light_gcn(self.n_layers,user_ids,item_ids,self.emb_dim,df_interactions)
-        self.light_gcn_recommender.compute_embeddings()
+        self.light_gcn_recommender.train_light_gcn(self.n_layers, user_ids, item_ids, self.emb_dim, df_interactions)
+        self.light_gcn_recommender.fit()
 
     def recall(self,user_profile:UserProfile)->set[int]:
         """

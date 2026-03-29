@@ -1,8 +1,10 @@
+import math
 import torch
 import torch.nn as nn
 from torch import optim
 from utils import bpr_loss
 from dataset import GraphDataset
+import faiss
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -49,6 +51,7 @@ class LightGCNRecommender(nn.Module):
 
         self.item_idx2id = item_idx2id
         self.topk=5
+        self.faiss_index = None
 
     def train_light_gcn(self,n_layers,user_ids,item_ids,embed_dim,df_interactions):
         print("LightGCN training...")
@@ -81,16 +84,75 @@ class LightGCNRecommender(nn.Module):
             # print(f"epoch{i} bpr_loss: {sum_loss / batch_num}")
         print("LightGCN training finished")
 
-    def compute_embeddings(self):
+    def fit(self):
         self.users_embedding, self.items_embedding = self.model.forward()
+        # 构建faiss索引
+        self.initialize_faiss_index()
 
-    def recommend_for_user(self,user_idx):
-        user_embedding = self.users_embedding[user_idx] # [1,emb_dim]
-        item_scores=torch.matmul(user_embedding,self.items_embedding.T)
+    def initialize_faiss_index(self):
+        """
+        初始化Faiss索引，将物品Embedding存入向量数据库
+        """
+        if self.items_embedding is None:
+            raise ValueError("请先调用 compute_embeddings 计算Embedding")
+        print("LightGCN faiss index building...")
+        # 获取物品向量维度
+        vector_dim = self.items_embedding.shape[1]
+        n_vectors = self.items_embedding.shape[0]
+        # 转换为numpy格式，faiss需要float32
+        # LightGCN的Embedding通常是未经归一化的，需要进行L2归一化以实现余弦相似度
+        items_embedding_numpy = self.items_embedding.detach().cpu().numpy().astype('float32')
 
-        topk=min(self.topk,len(item_scores))
-        _,top_idxs=torch.topk(item_scores,topk)
-        item_ids=[self.item_idx2id[idx] for idx in top_idxs.cpu().numpy()]
+        # L2归一化,下面再用IP内积就实现了余弦相似度
+        faiss.normalize_L2(items_embedding_numpy)
 
-        return set(item_ids)
+        # 根据物品数量选择索引类型
+        if n_vectors < 1000:  # 小数据量使用精确搜索
+            index = faiss.IndexFlatIP(vector_dim)  # 余弦相似度(向量已归一化)
+            index.add(items_embedding_numpy)
+        else:  # 大数据量使用近似搜索
+            # IVF (Inverted File) 参数
+            n_cluster = int(math.sqrt(n_vectors))  # 聚类中心数量
+            # PQ (Product Quantization) 参数
+            # M 是切分成的段数，因此向量维度要能整除M，物品塔的输出维度是32
+            M = 8
+            # 创建量化器 (用于聚类)
+            quantizer = faiss.IndexFlatIP(vector_dim)  # 使用内积，因为已经归一化
+            # 创建索引
+            index = faiss.IndexIVFPQ(quantizer, vector_dim, n_cluster, M, 8)
+            index.train(items_embedding_numpy)
+            index.add(items_embedding_numpy)
 
+        # 保存索引
+        self.faiss_index = index
+
+        print("LightGCN faiss index finished")
+
+    def recommend_for_user(self, user_idx, top_k=5):
+        """
+        使用Faiss向量数据库为用户推荐物品
+        Args:
+            user_idx: 用户索引
+            top_k: 推荐物品数量
+        Returns:
+            推荐的物品ID集合
+        """
+        if not hasattr(self, 'faiss_index') or self.faiss_index is None:
+            raise ValueError("请先调用 fit 函数构建Faiss索引")
+
+        # 获取用户Embedding
+        user_embedding = self.users_embedding[user_idx].detach().cpu().numpy().astype('float32')
+
+        # 对用户Embedding也进行L2归一化，以匹配物品向量的相似度计算方式
+        faiss.normalize_L2(user_embedding.reshape(1, -1))
+
+        # 设置搜索参数 (nprobe越大越精确但越慢)
+        self.faiss_index.nprobe = 5
+
+        # 在Faiss索引中搜索最相似的物品
+        scores, indices = self.faiss_index.search(user_embedding.reshape(1, -1), top_k)
+
+        # 将返回的物品索引转换为原始物品ID
+        recommended_item_ids = [self.item_idx2id[idx] for idx in indices[0]]
+
+        return set(recommended_item_ids)
