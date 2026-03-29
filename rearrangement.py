@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import List
 from sklearn.metrics.pairwise import cosine_similarity
 from entities import *
+import numpy as np
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -20,24 +21,30 @@ class MmrDiversity:
         self.window_size = 3
         # 物品间的余弦相似度矩阵（基于内容）
         self.item_id_index = {} #在build_cosine_similarity_matrix填充，这里的index就是矩阵的index
-        self.cosine_similarity_matrix = []
+        self.cosine_similarity_matrix = None
 
-    def build_cosine_similarity_matrix(self,items):
+    def build_cosine_similarity_matrix(self, items):
         """
         离线计算所有物品间的余弦相似度（基于内容）
         Args:
             items: 全体物品列表
         """
         self.items = items
-        n=len(self.items)
-        matrix = [[0]*n for _ in range(n)]
-        for i in range(n):
-            self.item_id_index[self.items[i].item_id]=i
-            for j in range(i+1,n):
-                sim=float(cosine_similarity(self.items[i].content_feature.cpu().detach().numpy(),self.items[j].content_feature.cpu().detach().numpy()))
-                matrix[i][j] = sim
-                matrix[j][i] = sim
-        self.cosine_similarity_matrix=matrix
+        n = len(self.items)
+
+        # 创建物品ID到索引的映射
+        self.item_id_index = {item.item_id: i for i, item in enumerate(items)}
+
+        # 提取所有 content_feature 并堆叠成矩阵 [n, feature_dim]
+        features_list = []
+        for item in items:
+            features_list.append(item.content_feature)
+
+        # 堆叠成 [n, feature_dim] 矩阵
+        all_features = np.vstack(features_list)
+
+        # 使用sklearn批量计算余弦相似度矩阵
+        self.cosine_similarity_matrix = cosine_similarity(all_features)
 
     def mmr_diversity_selection(self,items)->List[Item]:
         """
@@ -46,7 +53,9 @@ class MmrDiversity:
             items: 精排传过来的item列表
         """
         if not items:
-            return []
+            raise TypeError("物品列表为空")
+        if self.cosine_similarity_matrix is None:
+            raise TypeError("请先调用build_cosine_similarity_matrix方法计算余弦相似度矩阵")
 
         # 初始化已选择物品列表
         selected_items = []
@@ -70,7 +79,7 @@ class MmrDiversity:
                 # 计算与窗口中物品的最大相似度
                 max_sim = -1
                 for item_w in current_window:
-                    sim = self.cosine_similarity_matrix[self.item_id_index[item_r.item_id]][self.item_id_index[item_w.item_id]]
+                    sim = self.cosine_similarity_matrix[self.item_id_index[item_r.item_id],self.item_id_index[item_w.item_id]]
                     if sim > max_sim:
                         max_sim = sim
                 # 挑选的relevance_score越高越好，max_sim越小越好
