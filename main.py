@@ -112,6 +112,7 @@ class RecommenderSystem:
                                     ,list(self.df_users['user_id']),list(self.df_items['item_id']))
         # 粗排
         self.rough_ranking_recommender.train_three_towers_model(self.df_train)
+        self.rough_ranking_recommender.calculate_item_features(self.df_items)
         # 精排
         self.fine_ranking_recommender.train_multi_task_model(self.df_train)
         # 重排
@@ -132,14 +133,9 @@ class RecommenderSystem:
         # ============= 粗排 ================
         # 提取召回的id列表对应的行
         df_recall_items = self.df_items[self.df_items['item_id'].isin(recall_items_ids)].reset_index(drop=True)
-        df_user = pd.concat([df_user_profile] * len(df_recall_items)).reset_index(drop=True)
-        df_rough_ranking = pd.concat([df_recall_items.copy(), df_user.copy()], axis=1)  # 因为下面还要用，用copy防止出现未知bug
-        # 添加上当前的场景特征，统计特征已经包含在df_three_towers中了
-        # df_three_towers中的每一行代表一个要进行打分的物品，除了物品特征以外，用户特征，用户统计特征和场景特征均相同
-        df_rough_ranking['hour'] = [hour] * len(df_rough_ranking)
-        df_rough_ranking['is_weekend'] = [is_weekend] * len(df_rough_ranking)
-        df_rough_ranking['is_holiday'] = [is_holiday] * len(df_rough_ranking)
-        rough_ranking_ids = self.rough_ranking_recommender.rough_ranking(df_rough_ranking)
+        # 创建场景特征
+        df_scene = pd.DataFrame([[hour,is_weekend,is_holiday]],columns=['hour','is_weekend','is_holiday'])
+        rough_ranking_ids = self.rough_ranking_recommender.rough_ranking(df_user_profile.copy(),df_recall_items,df_scene)
         # ============= 精排 ================
         df_rough_items = df_recall_items[df_recall_items['item_id'].isin(rough_ranking_ids)].reset_index(drop=True)
         df_user = pd.concat([df_user_profile] * len(df_rough_items)).reset_index(drop=True)

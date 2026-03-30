@@ -1,4 +1,5 @@
 import heapq
+import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -78,6 +79,11 @@ class ThreeTowerModel(nn.Module):
                 user_ids, user_discrete, user_continuous, scene_discrete,
                 item_ids, item_discrete, item_continuous,
                 stat_continuous):
+        """
+        训练时使用
+        N个用户和 N 个物品为输入，输出 N 组（点击率、加购物车率、转发率、购买率）
+        真正做推荐时还可优化，对于一个用户的 N 个召回物品，用户塔只需计算一次，物品特征向量在向量数据库中存储不需在线计算，交叉塔需计算 N 次
+        """
         # 用户塔
         user_emb_list = [self.user_id_embed(user_ids)]
         for i in range(user_discrete.size(1)):
@@ -113,13 +119,55 @@ class ThreeTowerModel(nn.Module):
             output = mlp(combined_vector)
             outputs.append(output.squeeze(-1))
 
-        click_pred, like_pred, collect_pred, forward_pred = outputs
-        return click_pred, like_pred, collect_pred, forward_pred
+        click_pred, cart_pred, forward_pred, buy_pred = outputs
+        return click_pred, cart_pred, forward_pred, buy_pred
+
+    def forward_user(self,user_ids, user_discrete, user_continuous, scene_discrete):
+        """用户塔前向传播"""
+        # 用户塔
+        user_emb_list = [self.user_id_embed(user_ids)]
+        for i in range(user_discrete.size(1)):
+            emb = self.user_discrete_embeds[i](user_discrete[:, i])  # 取一整列，即某个离散特征的所有值，一次性embedding
+            user_emb_list.append(emb)
+        user_emb_list.append(user_continuous)  # 连续特征已在FeatureProcessor中进行过归一化
+
+        # 离散场景特征也需进入用户塔
+        for i in range(scene_discrete.size(1)):
+            emb = self.scene_discrete_embeds[i](scene_discrete[:, i])
+            user_emb_list.append(emb)
+        user_concat = torch.cat(user_emb_list, dim=1)
+        return self.user_tower(user_concat)
+
+    def forward_item(self,item_ids, item_discrete, item_continuous):
+        # 物品塔
+        item_emb_list = [self.item_id_embed(item_ids)]
+        for i in range(item_discrete.size(1)):
+            emb = self.item_discrete_embeds[i](item_discrete[:, i])
+            item_emb_list.append(emb)
+        item_emb_list.append(item_continuous)
+        item_concat = torch.cat(item_emb_list, dim=1)
+        return self.item_tower(item_concat)
+
+    def forward_cross(self,stat_continuous):
+        """交叉塔前向传播"""
+        return self.cross_tower(stat_continuous)
+
+    def forward_mlps(self,feature_vectors):
+        # 通过四个独立MLP
+        outputs = []
+        for mlp in self.mlps:
+            output = mlp(feature_vectors)
+            outputs.append(output.squeeze(-1))
+
+        click_pred, cart_pred, forward_pred, buy_pred = outputs
+        return click_pred, cart_pred, forward_pred, buy_pred
+
 
 class RoughRankingRecommender:
     def __init__(self):
         self.model = None
         self.processor = None
+        self.item_features_dict = {} # {item_id:feature}
         # 特征列定义
         self.user_discrete_cols = ['gender', 'user_categories', 'user_keywords']
         self.user_continuous_cols = ['age']
@@ -188,7 +236,7 @@ class RoughRankingRecommender:
                 targets = batch['targets'].to(device)
 
                 # 前向传播(传入的数据是带batch的)
-                click_pred, like_pred, collect_pred, forward_pred = model(
+                click_pred, cart_pred, forward_pred, buy_pred = model(
                     user_ids, user_discrete, user_continuous, scene_discrete,
                     item_ids, item_discrete, item_continuous,
                     stat_continuous
@@ -196,9 +244,9 @@ class RoughRankingRecommender:
 
                 # 计算损失
                 loss_click = criterion(click_pred, targets[:, 0])
-                loss_like = criterion(like_pred, targets[:, 1])
-                loss_collect = criterion(collect_pred, targets[:, 2])
-                loss_forward = criterion(forward_pred, targets[:, 3])
+                loss_like = criterion(cart_pred, targets[:, 1])
+                loss_collect = criterion(forward_pred, targets[:, 2])
+                loss_forward = criterion(buy_pred, targets[:, 3])
 
                 # 总损失
                 total_loss = loss_click + loss_like + loss_collect + loss_forward
@@ -213,48 +261,69 @@ class RoughRankingRecommender:
 
         print("three towers model training finished")
 
-    def rough_ranking(self,df):
+    def calculate_item_features(self,df_items):
         """
-            直接利用 df 构造输入数据，原始特征->预处理->转tensor输入三塔模型
-            """
+        离线计算物品塔输出特征(针对所有物品)
+        """
+        if self.model is None:
+            raise ValueError("请先调用 train_three_towers_model 训练三塔模型 或载入已训练的三塔模型")
+
+        idx_id_dict={idx:id for idx,id in enumerate(df_items['item_id'])}
+        item_ids, item_discrete, item_continuous = self.processor.transform_item_features(
+            df_items, self.item_discrete_cols, self.item_continuous_cols)
+        item_features = self.model.forward_item(item_ids, item_discrete, item_continuous)
+        self.item_features_dict = {idx_id_dict[idx]:feature for idx,feature in enumerate(torch.unbind(item_features, dim=0))}
+
+    def fusion_formula(self,click_pred, cart_pred, forward_pred, buy_pred):
+        return 0.4 * click_pred + 0.1 * cart_pred + 0.3 * forward_pred + 0.2 * buy_pred
+
+    def rough_ranking(self,df_user_profile,df_recall_items,df_scene)->set[int]:
+        """
+        在线推荐的粗排过程
+        Args:
+            df_user_profile:一个用户的画像、统计特征
+            df_recall_items:n个物品的画像、统计特征
+        """
         if self.model is None or self.processor is None:
             raise ValueError("请先调用train_three_towers_model训练三塔模型")
+        if self.item_features_dict is None:
+            raise ValueError("请先调用calculate_item_features计算物品特征向量")
 
         print("rough ranking...")
+        n_items = len(df_recall_items)
+        idx_id_dict={idx:id for idx,id in enumerate(df_recall_items['item_id'])}
         self.model.eval()
+        # 准备用户特征
+        user_ids, user_discrete, user_continuous = self.processor.transform_user_features(
+            df_user_profile, self.user_discrete_cols, self.user_continuous_cols)  # 离散特征ID转索引，连续特征归一化
+        # 准备场景特征
+        scene_discrete = self.processor.transform_scene_features(df_scene, self.scene_discrete_cols)
+        # 准备交叉特征
+        df_cross_user = df_user_profile[['user_click_last3m', 'user_cart_last3m', 'user_buy_last3m', 'user_forward_last3m']] # 1 行
+        df_cross_item = df_recall_items[['item_click_last3m', 'item_cart_last3m', 'item_buy_last3m', 'item_forward_last3m']] # n 行
+        df_cross_user_repeated = pd.concat([df_cross_user] * n_items, ignore_index=True)
+        df_cross = pd.concat([df_cross_user_repeated, df_cross_item], axis=1)
+        stat_continuous = self.processor.transform_stat_features(df_cross,self.stat_cont_cols)
+        # 用户塔输出特征向量（1行）
+        user_feature = self.model.forward_user(user_ids, user_discrete, user_continuous,scene_discrete)
+        # 交叉塔输出特征向量（n行）
+        cross_features = self.model.forward_cross(stat_continuous)
+        # 物品塔输出特征向量(直接从保存的全体物品特征向量中取出来即可)
+        recall_item_ids = list(df_recall_items['item_id'])
+        item_features = torch.stack([self.item_features_dict[id] for id in recall_item_ids]) # 每个物品特征向量进行堆叠
+        # 拼接为完整特征向量
+        user_features = torch.cat([user_feature]*n_items, dim=0)
+        feature_vectors = torch.cat([user_features, item_features,cross_features], dim=1)
+
         item_score = dict()  # 物品粗排分数字典，{item_id:score}
-        for i in range(0, len(df), 100):
-            df_batch = df.iloc[i:i + 100] if i + 100 < len(df) else df.iloc[i:]
-            # 转换特征
-            user_ids, user_discrete, user_continuous = self.processor.transform_user_features(
-                df_batch, self.user_discrete_cols, self.user_continuous_cols)  # 离散特征ID转索引，连续特征归一化
-
-            scene_discrete = self.processor.transform_scene_features(df_batch, self.scene_discrete_cols)
-
-            item_ids, item_discrete, item_continuous = self.processor.transform_item_features(
-                df_batch, self.item_discrete_cols, self.item_continuous_cols)
-
-            stat_continuous = self.processor.transform_stat_features(df_batch, self.stat_cont_cols)
-            # 带batch维度，一次性计算
-            click_pred, like_pred, collect_pred, forward_pred = self.model(
-                user_ids, user_discrete, user_continuous, scene_discrete,
-                item_ids, item_discrete, item_continuous,
-                stat_continuous
-            )
-            # 融分公式融合排序
-            for i in range(len(item_ids)):
-                # 这里的item_id其实是索引
-                item_score[item_ids[i]] = 0.4 * click_pred[i] + 0.1 * like_pred[i] + 0.3 * collect_pred[i] + 0.2 * \
-                                          forward_pred[i]
+        click_preds, cart_preds, forward_preds, buy_preds = self.model.forward_mlps(feature_vectors)
+        for i in range(len(feature_vectors)):
+            item_score[idx_id_dict[i]]=self.fusion_formula(click_preds[i], cart_preds[i], forward_preds[i], buy_preds[i])
         # 根据粗排分数截断返回
         topn = heapq.nlargest(5, item_score.items(), key=lambda x: x[1])
-        indexs = set([int(x[0]) for x in topn])
-        index_id_dict = {index: id for id, index in self.processor.item_id_vocab.items()}
-        ids = set()
-        for index in indexs:
-            ids.add(index_id_dict[index])
+        rough_ranking_ids = [x[0] for x in topn]
 
-        print("粗排后剩余物品ID:", ids)
+        print("粗排后剩余物品ID:", rough_ranking_ids)
         print("rough ranking finished\n")
 
-        return ids
+        return set(rough_ranking_ids)
