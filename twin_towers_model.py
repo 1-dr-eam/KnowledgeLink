@@ -269,7 +269,7 @@ class TwoTowersModelRecommender:
     def initialize_faiss_index(self):
         """
         初始化 Faiss 索引
-        计算好的物品特征向量存入向量数据库，后续用ANN高效匹配topk
+        计算好的物品特征向量存入向量数据库，后续用 ANN 高效匹配 topk
         """
         print("twin towers model faiss index building...")
         if self.all_item_vectors is None:
