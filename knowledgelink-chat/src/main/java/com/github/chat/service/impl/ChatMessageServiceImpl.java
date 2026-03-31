@@ -1,49 +1,100 @@
 package com.github.chat.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.github.chat.entity.ChatMessageRecord;
-import com.github.chat.mapper.ChatMessageRecordMapper;
+import com.github.chat.dto.ChatMessageSendDTO;
+import com.github.chat.entity.ChatMessage;
+import com.github.chat.mapper.ChatMessageMapper;
 import com.github.chat.service.IChatMessageService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.github.chat.vo.MessageListVO;
+import com.github.common.utils.CosUtil;
+import com.github.common.utils.IdCompareUtil;
+import com.github.common.utils.UserHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
-import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 聊天消息服务实现类
+ *
+ * @author ning
+ * @date 2026/03/24
+ */
 @Service
 public class ChatMessageServiceImpl implements IChatMessageService {
-    @Autowired
-    private ChatMessageRecordMapper chatMessageRecordMapper;
+    private static final int HISTORY_LIMIT = 50;
+    private final ChatMessageMapper chatMessageMapper;
+    private final IdCompareUtil idCompareUtil;
+    private final CosUtil cosUtil;
 
-    @Override
-    public List<ChatMessageRecord> getHistoryMessage(Long userId, Long targetUserId, Integer limit) {
-        int size = limit == null || limit <= 0 ? 100 : limit;
-        List<ChatMessageRecord> records = chatMessageRecordMapper.selectList(new LambdaQueryWrapper<ChatMessageRecord>()
-                .and(wrapper -> wrapper
-                        .and(w -> w.eq(ChatMessageRecord::getFromUserId, userId).eq(ChatMessageRecord::getToUserId, targetUserId))
-                        .or()
-                        .and(w -> w.eq(ChatMessageRecord::getFromUserId, targetUserId).eq(ChatMessageRecord::getToUserId, userId)))
-                .orderByDesc(ChatMessageRecord::getSendTime)
-                .last("limit " + size));
-        return records.stream().sorted(Comparator.comparing(ChatMessageRecord::getSendTime)).toList();
+    public ChatMessageServiceImpl(ChatMessageMapper chatMessageMapper, IdCompareUtil idCompareUtil, CosUtil cosUtil) {
+        this.chatMessageMapper = chatMessageMapper;
+        this.idCompareUtil = idCompareUtil;
+        this.cosUtil = cosUtil;
     }
 
     @Override
-    public void saveMessage(ChatMessageRecord messageRecord) {
-        if (messageRecord.getSendTime() == null) {
-            messageRecord.setSendTime(LocalDateTime.now());
+    public ChatMessage sendMessage(ChatMessageSendDTO sendDTO) {
+        Long userId = UserHolder.getUser().getId();
+        ChatMessage chatMessage = new ChatMessage();
+        chatMessage.setId(buildMessageId(userId, sendDTO.getToUserId()));
+        chatMessage.setSenderId(userId);
+        chatMessage.setReceiverId(sendDTO.getToUserId());
+        chatMessage.setMessage(sendDTO.getMessage());
+        chatMessage.setMessageType(ChatMessage.MessageType.TEXT);
+        chatMessage.setRead(Boolean.FALSE);
+        chatMessage.setSendTime(LocalDateTime.now());
+        saveMessage(chatMessage);
+        return chatMessage;
+    }
+
+    @Override
+    public void saveMessage(ChatMessage chatMessage) {
+        if (chatMessage.getSendTime() == null) {
+            chatMessage.setSendTime(LocalDateTime.now());
         }
-        chatMessageRecordMapper.insert(messageRecord);
+        if (chatMessage.getId() == null || chatMessage.getId().isBlank()) {
+            chatMessage.setId(buildMessageId(chatMessage.getSenderId(), chatMessage.getReceiverId()));
+        }
+        if (chatMessage.getMessageType() == null) {
+            chatMessage.setMessageType(ChatMessage.MessageType.TEXT);
+        }
+        if (chatMessage.getRead() == null) {
+            chatMessage.setRead(Boolean.FALSE);
+        }
+        chatMessageMapper.insert(chatMessage);
     }
 
     @Override
-    public void markRead(Long fromUserId, Long toUserId) {
-        chatMessageRecordMapper.update(null, new LambdaUpdateWrapper<ChatMessageRecord>()
-                .eq(ChatMessageRecord::getFromUserId, fromUserId)
-                .eq(ChatMessageRecord::getToUserId, toUserId)
-                .eq(ChatMessageRecord::getRead, false)
-                .set(ChatMessageRecord::getRead, true));
+    public List<MessageListVO> getHistoryMessages(Long targetUserId) {
+        Long userId = UserHolder.getUser().getId();
+        String messagePrefix = idCompareUtil.idCompare(userId, targetUserId) + "_";
+        List<ChatMessage> records = chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
+                .likeRight(ChatMessage::getId, messagePrefix)
+                .orderByDesc(ChatMessage::getSendTime)
+                .last("limit " + HISTORY_LIMIT));
+        List<MessageListVO> history = new ArrayList<>();
+        for (int i = records.size() - 1; i >= 0; i--) {
+            ChatMessage record = records.get(i);
+            MessageListVO messageListVO = new MessageListVO();
+            messageListVO.setId(record.getId());
+            messageListVO.setMessage(record.getMessage());
+            messageListVO.setSendTime(record.getSendTime());
+            messageListVO.setType(record.getMessageType() == ChatMessage.MessageType.IMAGE ? MessageListVO.MessageType.IMAGE : MessageListVO.MessageType.TEXT);
+            messageListVO.setSender(userId.equals(record.getSenderId()) ? MessageListVO.Sender.ME : MessageListVO.Sender.OPPOSITE);
+            history.add(messageListVO);
+        }
+        return history;
+    }
+
+    @Override
+    public String uploadImage(MultipartFile file) {
+        return cosUtil.uploadImage(file);
+    }
+
+    private String buildMessageId(Long senderId, Long receiverId) {
+        return idCompareUtil.idCompare(senderId, receiverId) + "_" + System.currentTimeMillis();
     }
 }

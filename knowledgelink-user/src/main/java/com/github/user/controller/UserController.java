@@ -8,6 +8,8 @@ import com.github.user.service.IUserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * 用户Controller
  *
@@ -58,5 +60,10 @@ public class UserController {
     @GetMapping("/follow/stat")
     public Result getUserFollowStatById(@RequestParam("id") Long id) {
         return userService.getUserFollowStatById(id);
+    }
+
+    @GetMapping("/batch")
+    public Result getUsersByIds(@RequestParam("ids") List<Long> ids) {
+        return userService.getUsersByIds(ids);
     }
 }

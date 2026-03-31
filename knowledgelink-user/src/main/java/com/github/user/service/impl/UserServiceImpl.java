@@ -27,7 +27,10 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -269,6 +272,29 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         userFollowStatVO.setFollowCount(followCount);
         userFollowStatVO.setFollowersCount(followersCount);
         return Result.success(userFollowStatVO);
+    }
+
+    @Override
+    public Result getUsersByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Result.success(new ArrayList<>());
+        }
+        Set<Long> idSet = new LinkedHashSet<>();
+        for (Long id : ids) {
+            if (id != null) {
+                idSet.add(id);
+            }
+        }
+        if (idSet.isEmpty()) {
+            return Result.success(new ArrayList<>());
+        }
+        List<User> users = baseMapper.selectByIds(new ArrayList<>(idSet));
+        List<UserDTO> userDTOList = users.stream().map(user -> {
+            UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
+            cacheUserInfo(userDTO);
+            return userDTO;
+        }).toList();
+        return Result.success(userDTOList);
     }
 
     /**

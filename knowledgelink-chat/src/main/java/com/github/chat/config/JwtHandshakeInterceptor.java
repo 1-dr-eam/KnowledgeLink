@@ -14,11 +14,26 @@ import java.util.Map;
 
 import static com.github.common.constant.SecurityConstant.JWT_CLAIM_USER_ID;
 
+/**
+ * JWT 握手拦截器
+ *
+ * @author ning
+ * @date 2026/03/24
+ */
 @Component
 public class JwtHandshakeInterceptor implements HandshakeInterceptor {
     @Autowired
     private JwtTokenUtil jwtTokenUtil;
 
+    /**
+     * 在 WebSocket 握手前校验用户身份并写入用户标识
+     *
+     * @param request 握手请求
+     * @param response 握手响应
+     * @param wsHandler WebSocket 处理器
+     * @param attributes 会话属性
+     * @return 校验通过返回 true
+     */
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Map<String, Object> attributes) {
         if (!(request instanceof ServletServerHttpRequest servletServerHttpRequest)) {
@@ -45,6 +60,14 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         return true;
     }
 
+    /**
+     * WebSocket 握手完成后的扩展回调
+     *
+     * @param request 握手请求
+     * @param response 握手响应
+     * @param wsHandler WebSocket 处理器
+     * @param exception 握手异常
+     */
     @Override
     public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Exception exception) {
     }

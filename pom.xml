@@ -21,6 +21,7 @@
         <module>knowledgelink-trade</module>
         <module>knowledgelink-forum</module>
         <module>knowledgelink-chat</module>
+        <module>knowledgelink-user</module>
     </modules>
 
     <properties>

@@ -2,8 +2,14 @@ package com.github.chat.dto;
 
 import lombok.Data;
 
+/**
+ * 聊天消息发送请求 DTO
+ *
+ * @author ning
+ * @date 2026/03/24
+ */
 @Data
-public class ChatSendMessageDTO {
+public class ChatMessageSendDTO {
     private Long toUserId;
     private String message;
     private String type;

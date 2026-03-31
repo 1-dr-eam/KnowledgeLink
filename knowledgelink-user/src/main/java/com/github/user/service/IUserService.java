@@ -6,6 +6,8 @@ import com.github.user.dto.LoginDTO;
 import com.github.user.dto.UserInfoDTO;
 import com.github.user.entity.User;
 
+import java.util.List;
+
 /**
  * 用户服务接口
  *
@@ -21,4 +23,5 @@ public interface IUserService extends IService<User> {
     Result getCurrentUser();
     Result getUserInfoById(Long id);
     Result getUserFollowStatById(Long id);
+    Result getUsersByIds(List<Long> ids);
 }
