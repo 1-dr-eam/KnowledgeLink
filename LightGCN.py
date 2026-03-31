@@ -58,10 +58,10 @@ class LightGCNRecommender(nn.Module):
         self.dataset=GraphDataset(user_ids,item_ids,df_interactions)
         self.model = LightGCN(n_layers, len(user_ids), len(item_ids), embed_dim, self.dataset.norm_adj_matrix).to(device)
         # train
-        epochs = 10
-        batch_size = 5
+        epochs = 50
+        batch_size = 200
         batch_num = 10  # 注意这里不是所有batch加起来是对所有数据过了一遍，因为generate是随机采样
-        optimizer = optim.Adam(self.model.parameters(), lr=0.001, weight_decay=1e-4)  # weight_decay内置了L2正则化
+        optimizer = optim.Adam(self.model.parameters(), lr=0.01, weight_decay=0.001)  # weight_decay内置了L2正则化
         for i in range(epochs):
             self.model.train()
             sum_loss = 0.0

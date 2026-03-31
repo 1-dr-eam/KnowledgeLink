@@ -448,7 +448,7 @@ class RecallRecommender:
         self.cf_topk=10
         self.twin_towers_model_topk=50
         # LightGCN
-        self.n_layers=3
+        self.n_layers=2
         self.emb_dim=64
         # 各分推荐器
         self.cf_recommender = CFRecommender()
