@@ -47,22 +47,24 @@ public class BookEsService {
         if (!existsResponse.value()) {
             elasticsearchClient.indices().create(c -> c.index(bookIndex)
                     .mappings(m -> m
-                            .properties("id", p -> p.long_(i -> i))
+                            .properties("itemId", p -> p.long_(i -> i))
                             .properties("sellerId", p -> p.long_(i -> i))
+                            .properties("city", p -> p.keyword(k -> k))
                             .properties("name", p -> p.text(t -> t.analyzer("ik_max_word").searchAnalyzer("ik_smart")))
                             .properties("author", p -> p.text(t -> t.analyzer("ik_max_word").searchAnalyzer("ik_smart")))
                             .properties("publisher", p -> p.text(t -> t.analyzer("ik_max_word").searchAnalyzer("ik_smart")))
                             .properties("version", p -> p.keyword(k -> k))
                             .properties("price", p -> p.double_(d -> d))
                             .properties("type", p -> p.keyword(k -> k))
-                            .properties("classify", p -> p.keyword(k -> k))
-                            .properties("subClassify", p -> p.keyword(k -> k))
+                            .properties("itemCategories", p -> p.keyword(k -> k))
+                            .properties("itemKeywords", p -> p.keyword(k -> k))
                             .properties("note", p -> p.boolean_(b -> b))
                             .properties("description", p -> p.text(t -> t.analyzer("ik_max_word").searchAnalyzer("ik_smart")))
+                            .properties("count", p -> p.integer(i -> i))
                             .properties("status", p -> p.integer(i -> i))
-                            .properties("avatar", p -> p.keyword(k -> k))
-                            .properties("createTime", p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")))
-                            .properties("updateTime", p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")))));
+                            .properties("image", p -> p.keyword(k -> k))
+                            .properties("createdTime", p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")))
+                            .properties("updatedTime", p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")))));
             syncAllBooks();
         }
     }
@@ -77,7 +79,7 @@ public class BookEsService {
             BookEsDocument document = BeanUtil.copyProperties(book, BookEsDocument.class);
             bulkBuilder.operations(op -> op.index(idx -> idx
                     .index(bookIndex)
-                    .id(String.valueOf(document.getId()))
+                    .id(String.valueOf(document.getItemId()))
                     .document(document)));
         }
         BulkResponse bulkResponse = elasticsearchClient.bulk(bulkBuilder.build());
@@ -90,17 +92,17 @@ public class BookEsService {
         BookEsDocument document = BeanUtil.copyProperties(book, BookEsDocument.class);
         IndexResponse indexResponse = elasticsearchClient.index(i -> i
                 .index(bookIndex)
-                .id(String.valueOf(document.getId()))
+                .id(String.valueOf(document.getItemId()))
                 .document(document));
         if (!"created".equals(indexResponse.result().jsonValue()) && !"updated".equals(indexResponse.result().jsonValue())) {
             throw new RuntimeException("ES写入失败");
         }
     }
 
-    public void deleteBook(Integer id) throws IOException {
+    public void deleteBook(Long itemId) throws IOException {
         DeleteResponse deleteResponse = elasticsearchClient.delete(d -> d
                 .index(bookIndex)
-                .id(String.valueOf(id)));
+                .id(String.valueOf(itemId)));
         if ("failed".equals(deleteResponse.result().jsonValue())) {
             throw new RuntimeException("ES删除失败");
         }
@@ -138,7 +140,7 @@ public class BookEsService {
         if (bookSearchDTO != null && StrUtil.isNotBlank(bookSearchDTO.getSearchKeyword())) {
             mustQueries.add(Query.of(q -> q.multiMatch(mm -> mm
                     .query(bookSearchDTO.getSearchKeyword())
-                    .fields("name^4", "author^2", "publisher^2", "classify^2", "subClassify^2", "description"))));
+                    .fields("name^4", "author^2", "publisher^2", "itemCategories^2", "itemKeywords^2", "description"))));
         }
         if (bookSearchDTO != null && bookSearchDTO.getNote() != null) {
             filterQueries.add(Query.of(q -> q.term(t -> t.field("note").value(bookSearchDTO.getNote()))));

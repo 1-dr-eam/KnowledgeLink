@@ -20,7 +20,7 @@ public interface IBookService extends IService<Book> {
 
     Result uploadBookAvatar(MultipartFile file);
 
-    Result removeBookInfo(Integer id);
+    Result removeBookInfo(Long itemId);
 
     Result updateBookInfo(BookDTO bookDTO);
 }

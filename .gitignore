@@ -12,6 +12,20 @@ target/
 *.iml
 *.ipr
 logs
+logs/
+**/logs/
+*.log
+
+### Tests ###
+**/src/test/
+**/*Test.java
+**/*Tests.java
+**/*IT.java
+
+### Database ###
+db/
+**/db/
+*.db
 
 
 ### Eclipse ###

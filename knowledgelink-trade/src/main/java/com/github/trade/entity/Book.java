@@ -12,26 +12,28 @@ import java.time.LocalDateTime;
 @Data
 @TableName("book_info")
 public class Book {
-    @TableId(type = IdType.ASSIGN_ID)
-    private Long id;
+    @TableId(value = "item_id", type = IdType.ASSIGN_ID)
+    private Long itemId;
     @TableField("seller_id")
     private Long sellerId;
+    private String city;
     private String name;
     private String author;
     private String publisher;
     private String version;
     private double price;
     private String type;
-    private String classify;
-    @TableField("sub_classify")
-    private String subClassify;
+    @TableField("item_categories")
+    private String itemCategories;
+    @TableField("item_keywords")
+    private String itemKeywords;
     private Boolean note;
     private String description;
     private Integer count;
     private Integer status;
-    private String avatar;
-    @TableField(value = "create_time", fill = FieldFill.INSERT)
-    private LocalDateTime createTime;
-    @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updateTime;
+    private String image;
+    @TableField(value = "created_time", fill = FieldFill.INSERT)
+    private LocalDateTime createdTime;
+    @TableField(value = "updated_time", fill = FieldFill.INSERT_UPDATE)
+    private LocalDateTime updatedTime;
 }

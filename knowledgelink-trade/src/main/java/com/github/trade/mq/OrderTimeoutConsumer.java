@@ -18,10 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.concurrent.TimeUnit;
 
-import static com.github.trade.util.RedisConstant.BOOK_INFO_KEY;
-import static com.github.trade.util.RedisConstant.BOOK_INFO_TTL;
-import static com.github.trade.util.RedisConstant.ORDER_KEY;
-import static com.github.trade.util.RedisConstant.ORDER_TTL;
+import static com.github.common.utils.RedisConstant.BOOK_INFO_KEY;
+import static com.github.common.utils.RedisConstant.BOOK_INFO_TTL;
+import static com.github.common.utils.RedisConstant.ORDER_KEY;
+import static com.github.common.utils.RedisConstant.ORDER_TTL;
 
 /**
  * 订单超时消息消费者
@@ -74,11 +74,11 @@ public class OrderTimeoutConsumer {
         // 库存回填
         if (order.getBookId() != null && order.getCount() != null && order.getCount() > 0) {
             bookMapper.update(null, new LambdaUpdateWrapper<Book>()
-                    .eq(Book::getId, order.getBookId())
+                    .eq(Book::getItemId, order.getBookId())
                     .setSql("count = count + " + order.getCount()));
             Book latestBook = bookMapper.selectById(order.getBookId());
             if (latestBook != null) {
-                stringRedisTemplate.opsForValue().set(BOOK_INFO_KEY + latestBook.getId(), JSONUtil.toJsonStr(latestBook), BOOK_INFO_TTL, TimeUnit.MINUTES);
+                stringRedisTemplate.opsForValue().set(BOOK_INFO_KEY + latestBook.getItemId(), JSONUtil.toJsonStr(latestBook), BOOK_INFO_TTL, TimeUnit.MINUTES);
             }
         }
         order.setStatus(ORDER_STATUS_TIMEOUT);

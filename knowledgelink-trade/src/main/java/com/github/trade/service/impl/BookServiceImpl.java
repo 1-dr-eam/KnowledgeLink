@@ -20,8 +20,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static com.github.trade.util.RedisConstant.BOOK_INFO_KEY;
-import static com.github.trade.util.RedisConstant.BOOK_INFO_TTL;
+import static com.github.common.utils.RedisConstant.BOOK_INFO_KEY;
+import static com.github.common.utils.RedisConstant.BOOK_INFO_TTL;
 
 /**
  * 书籍商品操作逻辑实现类
@@ -61,9 +61,9 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
         if(bookSearchDTO == null){
             return Result.error("搜索条件缺失");
         }
-        // id 不为空直接返回具体书籍的信息
-        if(bookSearchDTO.getId() != null){
-            BookDTO bookDTO = getBookInfoById(bookSearchDTO.getId());
+        // itemId 不为空直接返回具体书籍的信息
+        if(bookSearchDTO.getItemId() != null){
+            BookDTO bookDTO = getBookInfoById(bookSearchDTO.getItemId());
             if(bookDTO == null){
                 return Result.error("书籍信息不存在");
             }
@@ -119,12 +119,12 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
         Book book = bookConversionUtil.toBook(bookDTO);
         baseMapper.insert(book);
         // 使用redis进行缓存
-        String bookKey = BOOK_INFO_KEY + book.getId();
+        String bookKey = BOOK_INFO_KEY + book.getItemId();
         String bookJson = JSONUtil.toJsonStr(book);
         stringRedisTemplate.opsForValue().set(bookKey, bookJson, BOOK_INFO_TTL, TimeUnit.MINUTES);
         try {
             bookEsService.saveBook(book);
-            log.debug("id为：" + book.getId() + "的商品构建ES索引成功");
+            log.debug("itemId为：" + book.getItemId() + "的商品构建ES索引成功");
         } catch (Exception e) {
             return Result.error("商品已保存，但ES索引更新失败");
         }
@@ -150,14 +150,14 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
      * @return success
      */
     @Override
-    public Result removeBookInfo(Integer id) {
-        String bookKey = BOOK_INFO_KEY + id;
+    public Result removeBookInfo(Long itemId) {
+        String bookKey = BOOK_INFO_KEY + itemId;
         if(stringRedisTemplate.hasKey(bookKey)){
             stringRedisTemplate.delete(bookKey);
         }
-        baseMapper.deleteById(id);
+        baseMapper.deleteById(itemId);
         try {
-            bookEsService.deleteBook(id);
+            bookEsService.deleteBook(itemId);
         } catch (Exception e) {
             return Result.error("商品已下架，但ES索引删除失败");
         }
@@ -180,7 +180,7 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
         Book book = bookConversionUtil.toBook(bookDTO);
         baseMapper.updateById(book);
         // 若redis中存在对应的key则直接删除，下次查询填入
-        String bookKey = BOOK_INFO_KEY + book.getId();
+        String bookKey = BOOK_INFO_KEY + book.getItemId();
         if(stringRedisTemplate.hasKey(bookKey)){
             stringRedisTemplate.delete(bookKey);
         }

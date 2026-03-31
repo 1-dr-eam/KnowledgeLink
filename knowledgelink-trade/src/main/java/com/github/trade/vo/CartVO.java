@@ -23,9 +23,9 @@ public class CartVO {
     private String bookVersion;
     private Double bookPrice;
     private String bookType;
-    private String bookClassify;
-    private String bookSubClassify;
-    private List<String> bookAvatar;
+    private String bookItemCategories;
+    private String bookItemKeywords;
+    private List<String> bookImage;
     private Integer bookStatus;
     private Boolean inventory;
     private LocalDateTime createTime;

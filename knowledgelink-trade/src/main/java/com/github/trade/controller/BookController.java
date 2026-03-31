@@ -39,8 +39,8 @@ public class BookController {
     }
 
     @DeleteMapping("/removeBookInfo")
-    public Result removeBookInfo(@RequestParam("id") Integer id) {
-        return bookService.removeBookInfo(id);
+    public Result removeBookInfo(@RequestParam("itemId") Long itemId) {
+        return bookService.removeBookInfo(itemId);
     }
 
     @PutMapping("/updateBookInfo")

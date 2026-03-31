@@ -14,8 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.concurrent.TimeUnit;
 
-import static com.github.trade.util.RedisConstant.ORDER_KEY;
-import static com.github.trade.util.RedisConstant.ORDER_TTL;
+import static com.github.common.utils.RedisConstant.ORDER_KEY;
+import static com.github.common.utils.RedisConstant.ORDER_TTL;
 
 /**
  * 微信支付成功消息消费者

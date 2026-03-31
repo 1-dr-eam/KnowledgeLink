@@ -34,10 +34,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static com.github.trade.util.RedisConstant.BOOK_INFO_KEY;
-import static com.github.trade.util.RedisConstant.BOOK_INFO_TTL;
-import static com.github.trade.util.RedisConstant.ORDER_KEY;
-import static com.github.trade.util.RedisConstant.ORDER_TTL;
+import static com.github.common.utils.RedisConstant.BOOK_INFO_KEY;
+import static com.github.common.utils.RedisConstant.BOOK_INFO_TTL;
+import static com.github.common.utils.RedisConstant.ORDER_KEY;
+import static com.github.common.utils.RedisConstant.ORDER_TTL;
 
 /**
  * 用户作为消费者订单service实现类
@@ -108,18 +108,18 @@ public class ConsumerOrderServiceImpl extends ServiceImpl<ConsumerOrderMapper, O
                 return Result.error("商品库存不足");
             }
             int affectRows = bookMapper.update(null, new LambdaUpdateWrapper<Book>()
-                    .eq(Book::getId, book.getId())
+                    .eq(Book::getItemId, book.getItemId())
                     .ge(Book::getCount, orderAddDTO.getCount())
                     .setSql("count = count - " + orderAddDTO.getCount()));
             if (affectRows <= 0) {
                 return Result.error("商品库存不足");
             }
-            Book latestBook = bookMapper.selectById(book.getId());
+            Book latestBook = bookMapper.selectById(book.getItemId());
             syncBookCache(latestBook);
             Order order = new Order();
             order.setUserId(userId);
             order.setSellerId(book.getSellerId());
-            order.setBookId(book.getId());
+            order.setBookId(book.getItemId());
             order.setPrice(book.getPrice());
             order.setCount(orderAddDTO.getCount());
             order.setTotalPrice(book.getPrice() * orderAddDTO.getCount());
@@ -308,8 +308,8 @@ public class ConsumerOrderServiceImpl extends ServiceImpl<ConsumerOrderMapper, O
             orderSynoVO.setBookAuthor(bookDTO.getAuthor());
             orderSynoVO.setBookPublisher(bookDTO.getPublisher());
             orderSynoVO.setBookVersion(bookDTO.getVersion());
-            if (bookDTO.getAvatar() != null && !bookDTO.getAvatar().isEmpty()) {
-                orderSynoVO.setImage(bookDTO.getAvatar().get(0));
+            if (bookDTO.getImage() != null && !bookDTO.getImage().isEmpty()) {
+                orderSynoVO.setImage(bookDTO.getImage().get(0));
             }
         }
         return orderSynoVO;
@@ -323,8 +323,8 @@ public class ConsumerOrderServiceImpl extends ServiceImpl<ConsumerOrderMapper, O
             orderDetailVO.setBookPublisher(bookDTO.getPublisher());
             orderDetailVO.setBookVersion(bookDTO.getVersion());
             orderDetailVO.setBookDescription(bookDTO.getDescription());
-            if (bookDTO.getAvatar() != null && !bookDTO.getAvatar().isEmpty()) {
-                orderDetailVO.setImage(bookDTO.getAvatar().get(0));
+            if (bookDTO.getImage() != null && !bookDTO.getImage().isEmpty()) {
+                orderDetailVO.setImage(bookDTO.getImage().get(0));
             }
         }
         return orderDetailVO;
@@ -334,7 +334,7 @@ public class ConsumerOrderServiceImpl extends ServiceImpl<ConsumerOrderMapper, O
         if (book == null) {
             return;
         }
-        String bookKey = BOOK_INFO_KEY + book.getId();
+        String bookKey = BOOK_INFO_KEY + book.getItemId();
         String bookJson = JSONUtil.toJsonStr(book);
         stringRedisTemplate.opsForValue().set(bookKey, bookJson, BOOK_INFO_TTL, TimeUnit.MINUTES);
     }
@@ -344,7 +344,7 @@ public class ConsumerOrderServiceImpl extends ServiceImpl<ConsumerOrderMapper, O
             return;
         }
         bookMapper.update(null, new LambdaUpdateWrapper<Book>()
-                .eq(Book::getId, bookId)
+                .eq(Book::getItemId, bookId)
                 .setSql("count = count + " + count));
         Book latestBook = bookMapper.selectById(bookId);
         syncBookCache(latestBook);

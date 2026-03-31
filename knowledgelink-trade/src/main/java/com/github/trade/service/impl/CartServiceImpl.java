@@ -21,8 +21,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static com.github.trade.util.RedisConstant.CART_KEY;
-import static com.github.trade.util.RedisConstant.CART_TTL;
+import static com.github.common.utils.RedisConstant.CART_KEY;
+import static com.github.common.utils.RedisConstant.CART_TTL;
 
 /**
  * @author ning
@@ -185,9 +185,9 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
                 cartVO.setBookVersion(bookDTO.getVersion());
                 cartVO.setBookPrice(bookDTO.getPrice());
                 cartVO.setBookType(bookDTO.getType());
-                cartVO.setBookClassify(bookDTO.getClassify());
-                cartVO.setBookSubClassify(bookDTO.getSubClassify());
-                cartVO.setBookAvatar(bookDTO.getAvatar());
+                cartVO.setBookItemCategories(bookDTO.getItemCategories());
+                cartVO.setBookItemKeywords(bookDTO.getItemKeywords());
+                cartVO.setBookImage(bookDTO.getImage());
                 cartVO.setBookStatus(bookDTO.getStatus());
                 cartVO.setInventory(bookDTO.getCount() != null && shoppingCar.getCount() != null && bookDTO.getCount() >= shoppingCar.getCount());
                 if (shoppingCar.getCount() != null) {

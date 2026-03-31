@@ -8,7 +8,7 @@ import lombok.Data;
  */
 @Data
 public class BookSearchDTO {
-    private Long id;
+    private Long itemId;
     private String searchKeyword;
     // note : true->有笔记 false->无笔记
     private Boolean note;
