@@ -1,5 +1,10 @@
 package com.github.forum.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+
 /**
  * 热门帖子
  * 用于记录帖子的id, title, score
@@ -9,6 +14,11 @@ package com.github.forum.entity;
  * @author ning
  * @date 2026/04/01
  */
+@Data
+@TableName("hot_forum")
 public class HotForum {
-
+    @TableId(type = IdType.AUTO)
+    private Long id;
+    private String title;
+    private Integer score;
 }
