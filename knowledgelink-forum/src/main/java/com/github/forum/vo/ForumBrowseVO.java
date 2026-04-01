@@ -1,32 +1,33 @@
-package com.github.forum.entity;
+package com.github.forum.vo;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 论坛浏览vo
+ * 用于首页简要展示帖子信息
+ *
+ * @author ning
+ * @date 2026/04/01
+ */
 @Data
-@TableName("forum_post")
-public class ForumPost {
-    @TableId(type = IdType.AUTO)
+public class ForumBrowseVO {
     private Long id;
     private Long userId;
+    private String userName;
+    private String userAvatar;
     private String title;
     private String summary;
-    private String content;
-    private String authorName;
     private String coverAvatar;
     private String label;
+    private String subject;
+    private String subClassify;
     private String type;
     private String visibleRange;
     private Integer pageViews;
     private Integer likeCount;
     private Integer collectCount;
     private Integer commentCount;
-    private String subject;
-    private String subClassify;
     private LocalDateTime createTime;
-    private LocalDateTime updateTime;
 }
