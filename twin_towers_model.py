@@ -142,12 +142,12 @@ class TwoTowersModelRecommender:
             item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in self.item_discrete_cols],
             user_cont_dim=len(self.user_continuous_cols),
             item_cont_dim=len(self.item_continuous_cols),
-            embed_dim=32,
+            embed_dim=64,
             tower_hidden=[128, 64]
         ).to(device)
-        optimizer = optim.Adam(model.parameters(), lr=1e-3)
+        optimizer = optim.Adam(model.parameters(), lr=0.01)
         criterion = nn.MSELoss()
-
+        # 训练时正样本对:负样本对=1:2
         dataset = TwoTowerDataset(
             df_train, processor,
             self.user_discrete_cols, self.item_discrete_cols,
@@ -157,7 +157,7 @@ class TwoTowersModelRecommender:
         dataloader = DataLoader(dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_two_towers)
 
         # ========== 训练循环 ==========
-        for epoch in range(1):
+        for epoch in range(50):
             model.train()
             total_loss = 0
             for batch in dataloader:
@@ -173,6 +173,7 @@ class TwoTowersModelRecommender:
                 neg_scores = torch.stack(neg_scores, dim=1)
 
                 batch_size = pos_score.size(0)
+                # 一个正样本对的标签是1，两个负样本对的标签是-1
                 targets = torch.cat([
                     torch.ones(batch_size, 1, device=device),
                     -torch.ones(batch_size, 2, device=device)

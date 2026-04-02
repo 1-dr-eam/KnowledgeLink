@@ -135,14 +135,14 @@ class FineRankingRecommender:
             item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in self.item_discrete_cols],
             item_cont_dim=len(self.item_cont_cols),
             stat_cont_dim=len(self.stat_cont_cols),
-            hidden_dims=[128, 64, 32],
+            hidden_dims=[128, 64],
             n_tasks=len(self.target_cols)
         ).to(device)
 
         # ========== 定义损失函数和优化器 ==========
         # 使用交叉熵损失
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        optimizer = optim.Adam(model.parameters(), lr=0.01)
         # =========== 训练循环 ============
         num_epochs = 1
         # 训练阶段

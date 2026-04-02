@@ -207,7 +207,7 @@ class RoughRankingRecommender:
             item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in self.item_discrete_cols],
             item_cont_dim=len(self.item_continuous_cols),
             stat_cont_dim=len(self.stat_cont_cols),
-            user_tower_hidden=[64, 32],
+            user_tower_hidden=[32, 16],
             item_tower_hidden=[32, 16],
             cross_tower_hidden=[16],
             mlp_hidden=[16, 16],
@@ -219,7 +219,7 @@ class RoughRankingRecommender:
         criterion = nn.CrossEntropyLoss()  # 交叉熵损失
 
         # ========== 训练循环 ==========
-        num_epochs = 1
+        num_epochs = 10
         for epoch in range(num_epochs):
             # 训练
             model.train()
