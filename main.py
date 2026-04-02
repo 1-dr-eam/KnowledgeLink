@@ -1,5 +1,6 @@
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
+from typing import List
 import pandas as pd
 from entities import *
 from recall import RecallRecommender
@@ -21,10 +22,14 @@ class RecommenderSystem:
         self.df_interactions=pd.DataFrame() # 只包含 user_id 和 item_id 的 Dataframe
         self.df_train=pd.DataFrame()
         # 各阶段的推荐器
-        self.recall_recommender=RecallRecommender(self.item_idx2id)
         self.rough_ranking_recommender=RoughRankingRecommender()
         self.fine_ranking_recommender=FineRankingRecommender()
         self.rearrangement_recommender=MmrDiversity()
+        # 自动初始化
+        self.prepare_data()
+        self.fit()
+
+        self.recall_recommender = RecallRecommender(self.item_idx2id)
 
     def prepare_data(self):
         print("data preparing...")
@@ -107,6 +112,7 @@ class RecommenderSystem:
         print("data finished\n")
 
     def fit(self):
+        """离线计算"""
         # 召回
         self.recall_recommender.fit(self.df_train,self.items,self.interactions,self.df_interactions
                                     ,list(self.df_users['user_id']),list(self.df_items['item_id']))
@@ -118,8 +124,9 @@ class RecommenderSystem:
         # 重排
         self.rearrangement_recommender.build_cosine_similarity_matrix(self.items)
 
-    def recommend(self,user_id,hour,is_weekend,is_holiday):
+    def recommend(self,user_id,hour,is_weekend,is_holiday)->List[int]:
         """
+        在线推荐
         Args:
             user_id: 用户ID
             hour: 当前时间(小时)
@@ -152,15 +159,14 @@ class RecommenderSystem:
             if item.item_id in item_id_score:
                 item.relevance_score = item_id_score[item.item_id]
                 rearrangement_items.append(item)
-        final_selected_items=self.rearrangement_recommender.mmr_diversity_selection(rearrangement_items)
-        print("最终推荐的物品及顺序：", final_selected_items)
+        final_selected_items_ids=self.rearrangement_recommender.mmr_diversity_selection(rearrangement_items)
+        print("最终推荐的物品ID列表：", final_selected_items_ids)
         print("recommend finished\n")
+        return final_selected_items_ids
 
 def main():
     """主流程"""
     recommender_system = RecommenderSystem()
-    recommender_system.prepare_data()
-    recommender_system.fit()
     recommender_system.recommend("U1001",15,1,0)
 
 if __name__ == '__main__':

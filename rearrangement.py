@@ -46,7 +46,7 @@ class MmrDiversity:
         # 使用sklearn批量计算余弦相似度矩阵
         self.cosine_similarity_matrix = cosine_similarity(all_features)
 
-    def mmr_diversity_selection(self,items)->List[Item]:
+    def mmr_diversity_selection(self,items)->List[int]:
         """
         执行MMR算法
         Args:
@@ -89,5 +89,7 @@ class MmrDiversity:
             # 将选中的物品加入已选择列表
             selected_items.append(best_item)
             remaining_items.remove(best_item)
+
+        selected_items = [item.item_id for item in selected_items]
 
         return selected_items
