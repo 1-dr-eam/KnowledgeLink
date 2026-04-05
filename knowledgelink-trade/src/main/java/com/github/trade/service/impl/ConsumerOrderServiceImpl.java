@@ -17,6 +17,7 @@ import com.github.trade.mapper.BookMapper;
 import com.github.trade.mapper.ConsumerOrderMapper;
 import com.github.trade.mq.OrderTimeoutProducer;
 import com.github.trade.service.IConsumerOrderService;
+import com.github.trade.util.UserItemInteractionRecordUtil;
 import com.github.trade.vo.OrderDetailVO;
 import com.github.trade.vo.OrderSynoVO;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,6 +82,8 @@ public class ConsumerOrderServiceImpl extends ServiceImpl<ConsumerOrderMapper, O
 
     @Autowired
     private OrderTimeoutProducer orderTimeoutProducer;
+    @Autowired
+    private UserItemInteractionRecordUtil userItemInteractionRecordUtil;
 
     /**
      * 添加订单
@@ -129,6 +132,7 @@ public class ConsumerOrderServiceImpl extends ServiceImpl<ConsumerOrderMapper, O
             baseMapper.insert(order);
             syncOrderCache(order);
             orderTimeoutProducer.sendOrderTimeoutCheck(order.getId());
+            userItemInteractionRecordUtil.recordBuy(userId, book.getItemId());
             return Result.success();
         } finally {
             unlockBookStock(orderAddDTO.getBookId(), lockValue);

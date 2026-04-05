@@ -15,4 +15,6 @@ public class BookSearchDTO {
     private String type;
     // sort : 1->升序 2->降序
     private Integer sort;
+    private Integer page;
+    private Integer limit;
 }

@@ -12,6 +12,7 @@ import com.github.trade.dto.IdRequest;
 import com.github.trade.entity.ShoppingCar;
 import com.github.trade.mapper.CartMapper;
 import com.github.trade.service.ICartService;
+import com.github.trade.util.UserItemInteractionRecordUtil;
 import com.github.trade.vo.CartVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -39,6 +40,8 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
 
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+    @Autowired
+    private UserItemInteractionRecordUtil userItemInteractionRecordUtil;
 
 
     /**
@@ -75,6 +78,7 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
             oldShoppingCar.setInventory(true);
             baseMapper.updateById(oldShoppingCar);
             syncCartCountToRedis(userId, oldShoppingCar.getBookId(), newCount);
+            userItemInteractionRecordUtil.recordCart(userId, oldShoppingCar.getBookId());
             return Result.success();
         }
         ShoppingCar shoppingCar = new ShoppingCar();
@@ -84,6 +88,7 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
         shoppingCar.setInventory(true);
         baseMapper.insert(shoppingCar);
         syncCartCountToRedis(userId, shoppingCar.getBookId(), shoppingCar.getCount());
+        userItemInteractionRecordUtil.recordCart(userId, shoppingCar.getBookId());
         return Result.success();
     }
 

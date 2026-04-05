@@ -26,6 +26,6 @@ public class BookEsDocument {
     private Integer count;
     private Integer status;
     private String image;
-    private LocalDateTime createdTime;
-    private LocalDateTime updatedTime;
+    private LocalDateTime createTime;
+    private LocalDateTime updateTime;
 }

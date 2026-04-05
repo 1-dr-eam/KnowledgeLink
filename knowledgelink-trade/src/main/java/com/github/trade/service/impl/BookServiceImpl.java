@@ -7,18 +7,24 @@ import com.github.common.utils.CosUtil;
 import com.github.common.utils.UserHolder;
 import com.github.trade.dto.BookDTO;
 import com.github.trade.dto.BookSearchDTO;
+import com.github.trade.dto.RecommendHealthResponse;
+import com.github.trade.dto.RecommendIdsResponse;
 import com.github.trade.entity.Book;
+import com.github.trade.feign.RecommendFeignClient;
 import com.github.trade.mapper.BookMapper;
 import com.github.trade.service.BookEsService;
 import com.github.trade.service.IBookService;
 import com.github.trade.util.BookConversionUtil;
+import com.github.trade.util.UserItemInteractionRecordUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static com.github.common.utils.RedisConstant.BOOK_INFO_KEY;
 import static com.github.common.utils.RedisConstant.BOOK_INFO_TTL;
@@ -44,10 +50,44 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
     @Autowired
     private BookEsService bookEsService;
 
-    // TODO 推荐系统算法完善后补充
+    @Autowired
+    private RecommendFeignClient recommendFeignClient;
+    @Autowired
+    private UserItemInteractionRecordUtil userItemInteractionRecordUtil;
+
     @Override
     public Result getRecommendedBooks() {
-        return null;
+        try {
+            String health = recommendFeignClient.health();
+            RecommendHealthResponse recommendHealthResponse = JSONUtil.toBean(health, RecommendHealthResponse.class);
+            if (recommendHealthResponse == null || !"healthy".equals(recommendHealthResponse.getHealth())) {
+                return Result.success(listRandomBooksFallback(50));
+            }
+            String recommend = recommendFeignClient.recommend();
+            RecommendIdsResponse recommendIdsResponse = JSONUtil.toBean(recommend, RecommendIdsResponse.class);
+            if (recommendIdsResponse == null || recommendIdsResponse.getRecommendIds() == null || recommendIdsResponse.getRecommendIds().isEmpty()) {
+                return Result.success(listRandomBooksFallback(50));
+            }
+            List<Long> recommendations = Stream.of(recommendIdsResponse.getRecommendIds().toArray(new Object[0]))
+                    .map(Object::toString)
+                    .map(Long::parseLong)
+                    .limit(50)
+                    .toList();
+            List<BookDTO> bookDTOList = new ArrayList<>();
+            for (Long recommendation : recommendations) {
+                BookDTO bookDTO = getBookInfoById(recommendation, false);
+                if (bookDTO == null) {
+                    continue;
+                }
+                bookDTOList.add(bookDTO);
+            }
+            if (bookDTOList.isEmpty()) {
+                return Result.success(listRandomBooksFallback(50));
+            }
+            return Result.success(bookDTOList);
+        } catch (Exception e) {
+            return Result.success(listRandomBooksFallback(50));
+        }
     }
 
     /**
@@ -61,9 +101,10 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
         if(bookSearchDTO == null){
             return Result.error("搜索条件缺失");
         }
+        normalizePageLimit(bookSearchDTO);
         // itemId 不为空直接返回具体书籍的信息
         if(bookSearchDTO.getItemId() != null){
-            BookDTO bookDTO = getBookInfoById(bookSearchDTO.getItemId());
+            BookDTO bookDTO = getBookInfoById(bookSearchDTO.getItemId(), true);
             if(bookDTO == null){
                 return Result.error("书籍信息不存在");
             }
@@ -84,23 +125,34 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
      * @return 图书dto
      */
      BookDTO getBookInfoById(Long id) {
+        return getBookInfoById(id, false);
+    }
+
+     BookDTO getBookInfoById(Long id, boolean recordView) {
         String bookKey = BOOK_INFO_KEY + id;
+        BookDTO bookDTO;
         if(stringRedisTemplate.hasKey(bookKey)) {
             String bookJson = stringRedisTemplate.opsForValue().get(bookKey);
             Book book = JSONUtil.toBean(bookJson, Book.class);
             // avatarJson转换为List
-            return bookConversionUtil.toBookDTO(book);
+            bookDTO = bookConversionUtil.toBookDTO(book);
         } else {
             Book book = baseMapper.selectById(id);
             if(book == null){
                 return null;
             }
-            BookDTO bookDTO = bookConversionUtil.toBookDTO(book);
+            bookDTO = bookConversionUtil.toBookDTO(book);
             // TODO 后续可通过新线程或者MQ优化（待测试）
             String bookJson = JSONUtil.toJsonStr(book);
             stringRedisTemplate.opsForValue().set(bookKey, bookJson, BOOK_INFO_TTL, TimeUnit.MINUTES);
-            return bookDTO;
         }
+        if (recordView) {
+            try {
+                userItemInteractionRecordUtil.recordView(UserHolder.getUser().getId(), id);
+            } catch (Exception ignored) {
+            }
+        }
+        return bookDTO;
     }
 
     /**
@@ -146,7 +198,7 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
     /**
      * 下架图书
      *
-     * @param id ID
+     * @param itemId 图书ID
      * @return success
      */
     @Override
@@ -192,5 +244,25 @@ public class BookServiceImpl extends ServiceImpl<BookMapper, Book> implements IB
         return Result.success();
     }
 
+
+    private void normalizePageLimit(BookSearchDTO bookSearchDTO) {
+        if (bookSearchDTO.getLimit() == null || bookSearchDTO.getLimit() <= 0) {
+            bookSearchDTO.setLimit(50);
+        }
+        if (bookSearchDTO.getPage() == null || bookSearchDTO.getPage() <= 0) {
+            bookSearchDTO.setPage(1);
+        }
+    }
+
+    private List<BookDTO> listRandomBooksFallback(int limit) {
+        List<Book> books = baseMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Book>()
+                .eq(Book::getStatus, 1)
+                .last("order by rand() limit " + limit));
+        List<BookDTO> bookDTOList = new ArrayList<>();
+        for (Book book : books) {
+            bookDTOList.add(bookConversionUtil.toBookDTO(book));
+        }
+        return bookDTOList;
+    }
 
 }

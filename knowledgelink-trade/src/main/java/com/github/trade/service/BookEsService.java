@@ -63,8 +63,8 @@ public class BookEsService {
                             .properties("count", p -> p.integer(i -> i))
                             .properties("status", p -> p.integer(i -> i))
                             .properties("image", p -> p.keyword(k -> k))
-                            .properties("createdTime", p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")))
-                            .properties("updatedTime", p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")))));
+                            .properties("createTime", p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")))
+                            .properties("updateTime", p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")))));
             syncAllBooks();
         }
     }
@@ -109,12 +109,16 @@ public class BookEsService {
     }
 
     public List<BookDTO> searchBooks(BookSearchDTO bookSearchDTO) throws IOException {
+        int limit = (bookSearchDTO == null || bookSearchDTO.getLimit() == null || bookSearchDTO.getLimit() <= 0) ? 50 : bookSearchDTO.getLimit();
+        int page = (bookSearchDTO == null || bookSearchDTO.getPage() == null || bookSearchDTO.getPage() <= 0) ? 1 : bookSearchDTO.getPage();
+        int from = (page - 1) * limit;
         Query query = buildQuery(bookSearchDTO);
         SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
                 .index(bookIndex)
                 .query(query)
-                .size(100);
-        if (bookSearchDTO.getSort() != null) {
+                .from(from)
+                .size(limit);
+        if (bookSearchDTO != null && bookSearchDTO.getSort() != null) {
             if (bookSearchDTO.getSort() == 1) {
                 requestBuilder.sort(s -> s.field(f -> f.field("price").order(SortOrder.Asc)));
             } else if (bookSearchDTO.getSort() == 2) {

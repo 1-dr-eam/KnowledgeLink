@@ -2,6 +2,7 @@ package com.github.trade.controller;
 
 import com.github.common.dto.Result;
 import com.github.trade.dto.IdRequest;
+import com.github.trade.dto.WechatPayCallbackDTO;
 import com.github.trade.util.weChatPaymentUtil;
 import org.springframework.web.bind.annotation.*;
 
@@ -50,5 +51,10 @@ public class WeChatPaymentController {
     @PostMapping("/mockWechatPay")
     public Result mockWechatPay(@RequestBody IdRequest idRequest) {
         return weChatPaymentUtil.mockPay(idRequest);
+    }
+
+    @PostMapping("/wechatPayCallback")
+    public Result wechatPayCallback(@RequestBody WechatPayCallbackDTO callbackDTO) {
+        return weChatPaymentUtil.handlePayCallback(callbackDTO);
     }
 }

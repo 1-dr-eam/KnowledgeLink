@@ -8,6 +8,7 @@ import com.github.common.mq.MqMessageDTO;
 import com.github.common.mq.MqTopologyConstant;
 import com.github.common.utils.UserHolder;
 import com.github.trade.dto.IdRequest;
+import com.github.trade.dto.WechatPayCallbackDTO;
 import com.github.trade.entity.Order;
 import com.github.trade.mapper.ConsumerOrderMapper;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -106,6 +107,40 @@ public class weChatPaymentUtil {
         }
         if (!ORDER_STATUS_WAIT_PAY.equals(order.getStatus())) {
             return Result.error("当前状态不可模拟支付");
+        }
+        Map<String, Object> payMessage = new HashMap<>();
+        payMessage.put("orderId", order.getId());
+        payMessage.put("targetStatus", ORDER_STATUS_WAIT_SHIP);
+        MqMessageDTO mqMessageDTO = new MqMessageDTO();
+        mqMessageDTO.setMessageId(UUID.randomUUID().toString());
+        mqMessageDTO.setCreateTime(LocalDateTime.now());
+        mqMessageDTO.setMessageBody(JSONUtil.toJsonStr(payMessage));
+        rabbitTemplate.convertAndSend(MqTopologyConstant.PAY_SUCCESS_EXCHANGE, MqTopologyConstant.PAY_SUCCESS_ROUTING_KEY, mqMessageDTO);
+        return Result.success();
+    }
+
+    public Result handlePayCallback(WechatPayCallbackDTO callbackDTO) {
+        if (callbackDTO == null || callbackDTO.getTradeNo() == null || callbackDTO.getTradeNo().isBlank()) {
+            return Result.error("回调参数错误");
+        }
+        if (callbackDTO.getPayStatus() != null && !"SUCCESS".equalsIgnoreCase(callbackDTO.getPayStatus())) {
+            return Result.error("支付状态非成功");
+        }
+        if (!callbackDTO.getTradeNo().startsWith("WX")) {
+            return Result.error("交易号格式错误");
+        }
+        Long orderId;
+        try {
+            orderId = Long.parseLong(callbackDTO.getTradeNo().substring(2));
+        } catch (Exception e) {
+            return Result.error("交易号解析失败");
+        }
+        Order order = consumerOrderMapper.selectById(orderId);
+        if (order == null) {
+            return Result.error("订单不存在");
+        }
+        if (!ORDER_STATUS_WAIT_PAY.equals(order.getStatus())) {
+            return Result.success();
         }
         Map<String, Object> payMessage = new HashMap<>();
         payMessage.put("orderId", order.getId());
