@@ -1,9 +1,12 @@
+from typing import List
+from entities import *
 import torch
 
 # 数据样本转tensor
 def collate_fn_two_towers(batch):
     """
     双塔
+    数据加载器的批次处理函数
     将一批样本（每个含1正+2负）合并为张量
     """
     # === 用户特征（所有样本共享）===
@@ -61,6 +64,43 @@ def collate_fn_three_towers(batch):
     }
 
 def bpr_loss(pos_scores,neg_scores)->torch.Tensor:
+    """BPR损失函数，用于LightGCN"""
     diff=pos_scores-neg_scores
     bpr=-1.0*torch.sum(torch.log(torch.sigmoid(diff)))
     return bpr
+
+async def getItems(df_items)->List[Item]:
+    """
+    Dataframe 转 Item 对象列表
+    """
+    clip_model, preprocess = clip.load("ViT-B/32", device=device)
+    new_items = []
+    for row in df_items.itertuples(index=True):  # index=True 获取原始的 DataFrame 索引
+        item_idx = row.Index
+        # 构建 discrete_features 和 continuous_features 字典
+        discrete_features = {
+            'city': row.city,
+            'name': row.name,
+            'author': row.author,
+            'item_categories': row.item_categories,
+            'item_keywords': row.item_keywords
+        }
+        continuous_features = {'price': row.price}
+        # 创建 Item 对象
+        item = Item(
+            item_idx,
+            row.item_id,
+            row.name,
+            row.author,
+            row.item_categories,
+            row.item_keywords,
+            discrete_features,
+            continuous_features,
+            row.create_time,
+            row.image,
+            row.description
+        )
+        # 计算特征
+        item.calculate_content_feature(clip_model, preprocess)
+        new_items.append(item)
+    return new_items
