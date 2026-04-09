@@ -17,8 +17,8 @@ class MmrDiversity:
         """
         self.items = []
         self.lambda_param = 0.7
-        self.selection_count = 5
-        self.window_size = 3
+        self.selection_count = 50
+        self.window_size = 50
         # 物品间的余弦相似度矩阵（基于内容）
         self.item_id_index = {} #在build_cosine_similarity_matrix填充，这里的index就是矩阵的index
         self.cosine_similarity_matrix = None
