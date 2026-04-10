@@ -112,6 +112,7 @@ class GraphDataset(Dataset):
         self.user2idx={id:index for index,id in enumerate(users_ids)}
         self.item2idx={id:index for index,id in enumerate(items_ids)}
         self.user_ids=users_ids # 全体用户id列表
+        self.interactions=df_interactions
         self.real_user_ids=df_interactions['user_id'].unique().tolist() # 存在交互记录的用户id列表
         self.n_users=len(users_ids)
         self.n_items=len(items_ids)
