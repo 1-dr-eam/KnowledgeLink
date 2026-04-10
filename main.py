@@ -25,9 +25,8 @@ class RecommenderSystem:
         self.rough_ranking_recommender=RoughRankingRecommender()
         self.fine_ranking_recommender=FineRankingRecommender()
         self.rearrangement_recommender=MmrDiversity()
-        # 自动初始化
+        # 自动初始化数据
         self.prepare_data()
-        self.fit()
 
         self.recall_recommender = RecallRecommender(self.item_idx2id)
 
@@ -36,7 +35,7 @@ class RecommenderSystem:
         # clip用于提取图片和文本特征，拼接成为物品内容特征向量
         clip_model, preprocess = clip.load("ViT-B/32", device=device)
         # 准备物品数据
-        self.df_items = pd.read_csv("data/items.csv", encoding="utf-8")
+        self.df_items = pd.read_csv("data/items_new.csv", encoding="utf-8")
         self.df_items['item_keywords'] = self.df_items['item_keywords'].apply(lambda x: tuple(x.split(';')))
         print("开始构建物品索引...")
         for row in self.df_items.itertuples(index=True):  # index=True 获取原始的 DataFrame 索引
@@ -60,7 +59,7 @@ class RecommenderSystem:
                 row.item_keywords,
                 discrete_features,
                 continuous_features,
-                row.created_time,
+                row.create_time,
                 row.image,
                 row.description
             )
@@ -72,7 +71,7 @@ class RecommenderSystem:
             self.items.append(item)
         print("物品索引构建完成")
         # 准备用户数据
-        self.df_users = pd.read_csv("data/users.csv", encoding="utf-8")
+        self.df_users = pd.read_csv("data/users_new.csv", encoding="utf-8")
         self.df_users['user_categories'] = self.df_users['user_categories'].fillna('').apply(lambda x: tuple(x.split(';')))
         self.df_users['user_keywords'] = self.df_users['user_keywords'].fillna('').apply(lambda x: tuple(x.split(';')))
         print("开始构建用户画像...")
@@ -100,7 +99,7 @@ class RecommenderSystem:
             self.users.append(user)
         print("用户画像构建完成")
         # 准备交互数据
-        self.df_interactions = pd.read_csv("data/interactions.csv", encoding="utf-8")
+        self.df_interactions = pd.read_csv("data/interactions_new.csv", encoding="utf-8")
         self.interactions=list(zip(
             self.df_interactions['user_id'],
             self.df_interactions['item_id'],
@@ -121,6 +120,23 @@ class RecommenderSystem:
         self.rough_ranking_recommender.calculate_item_features(self.df_items)
         # 精排
         self.fine_ranking_recommender.train_multi_task_model(self.df_train)
+        # 重排
+        self.rearrangement_recommender.build_cosine_similarity_matrix(self.items)
+
+    def fit_with_weights(self,twin_towers_model_weights_path,light_gcn_weights_path,
+                         three_towers_model_weights_path,multi_task_model_path):
+        """
+        离线计算（模型直接加载训练好的权重）
+        """
+        # 召回
+        self.recall_recommender.fit_with_weights(self.df_train, self.items, self.interactions, self.df_interactions
+                                                ,list(self.df_users['user_id']), list(self.df_items['item_id'])
+                                                ,twin_towers_model_weights_path,light_gcn_weights_path)
+        # 粗排
+        self.rough_ranking_recommender.load_three_towers_model(self.df_train,three_towers_model_weights_path)
+        self.rough_ranking_recommender.calculate_item_features(self.df_items)
+        # 精排
+        self.fine_ranking_recommender.load_multi_task_model(self.df_train,multi_task_model_path)
         # 重排
         self.rearrangement_recommender.build_cosine_similarity_matrix(self.items)
 
@@ -167,7 +183,15 @@ class RecommenderSystem:
 def main():
     """主流程"""
     recommender_system = RecommenderSystem()
-    recommender_system.recommend("U1001",15,1,0)
+    # 各模型权重路径
+    twin_towers_model_weights_path = "model_weights/twin_towers_model.pth"
+    light_gcn_weights_path = "model_weights/lightgcn.pth"
+    three_towers_model_weights_path = "model_weights/three_towers_model.pth"
+    multi_task_model_path = "model_weights/multi_task_model.pth"
+    # 采用预训练权重直接加载模型
+    recommender_system.fit_with_weights(twin_towers_model_weights_path,light_gcn_weights_path, three_towers_model_weights_path, multi_task_model_path)
+    # 假设对第一个用户做推荐，此时是15时，是周末，不是节假日
+    recommender_system.recommend("U00001",15,1,0)
 
 if __name__ == '__main__':
     main()
