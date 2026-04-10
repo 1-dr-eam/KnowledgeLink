@@ -60,7 +60,7 @@ class ItemCF:
 
         print("ItemCF training completed.")
 
-    def itemCF_recommend(self, user_id, n_rec=50):
+    def itemCF_recommend(self, user_id, n_rec=100):
         """
         推荐时考虑用户对历史物品的评分强度
         score(j) = sum_{i in hist} r_ui * sim(i, j)
@@ -132,7 +132,7 @@ class UserCF:
 
         print("UserCF training completed.")
 
-    def userCF_recommend(self, user_id, n_rec=50):
+    def userCF_recommend(self, user_id, n_rec=100):
         """
         为用户推荐物品
         :param user: 目标用户ID
@@ -170,7 +170,7 @@ class CFRecommender:
     def __init__(self):
         self.user_cf=UserCF()
         self.item_cf=ItemCF()
-        self.n_rec=50
+        self.n_rec=100
 
     def fit(self, user_item_rating_list,top_k=10):
         self.user_cf.fit(user_item_rating_list,top_k)
@@ -206,13 +206,13 @@ class ClassificationRecommender:
         """构建索引（按创建时间倒序排列）"""
         for category, items in self.category_index.items():
             # 按创建时间倒序排列
-            self.category_index[category] = sorted(items, key=lambda x: x.created_time, reverse=True)
+            self.category_index[category] = sorted(items, key=lambda x: x.create_time, reverse=True)
 
         for keyword, items in self.keyword_index.items():
             # 按创建时间倒序排列
-            self.keyword_index[keyword] = sorted(items, key=lambda x: x.created_time, reverse=True)
+            self.keyword_index[keyword] = sorted(items, key=lambda x: x.create_time, reverse=True)
 
-    def category_recall(self, user_categories, topk=10)->set[Item]:
+    def category_recall(self, user_categories, topk=50)->set[Item]:
         """
         类目召回通道
         Args:
@@ -232,7 +232,7 @@ class ClassificationRecommender:
         # 去重并返回
         return set(recalled_items_ids)
 
-    def keyword_recall(self, user_keywords, topk=10):
+    def keyword_recall(self, user_keywords, topk=50):
         """
         关键词召回通道
         Args:
@@ -252,7 +252,7 @@ class ClassificationRecommender:
         # 去重并返回
         return set(recalled_items_ids)
 
-    def classification_recommend(self, user_profile, topk_per_channel=10):
+    def classification_recommend(self, user_profile, topk_per_channel=50):
         """
         基于类别的推荐主函数
         Args:
@@ -430,7 +430,7 @@ class ColdStartRecommender:
 
     def cold_start_recommend(self,user_profile)->set[int]:
         # 聚类
-        clustering_recalls=self.clustering_recommender.clustering_recommend(user_profile=user_profile, last_n=50, m=10)
+        clustering_recalls=self.clustering_recommender.clustering_recommend(user_profile=user_profile, last_n=20, m=10)
         # 类目和关键词
         classification_recalls=self.classification_recommender.classification_recommend(user_profile=user_profile,topk_per_channel=50)
         # 合并去重
@@ -443,9 +443,9 @@ class RecallRecommender:
         self.interactions = None
         # ============ 各项参数 ==============
         # 聚类簇数
-        self.n_clusters = 5
+        self.n_clusters = int(math.sqrt(len(item_idx2id)))
         # topk
-        self.cf_topk=10
+        self.cf_topk=10 # 每个用户或物品索引topk个最相似的
         self.twin_towers_model_topk=50
         # LightGCN
         self.n_layers=2
@@ -467,6 +467,20 @@ class RecallRecommender:
         self.twin_towers_model_recommender.fit(items)  # 计算物品特征向量，加入faiss
         # LightGCN
         self.light_gcn_recommender.train_light_gcn(self.n_layers, user_ids, item_ids, self.emb_dim, df_interactions)
+        self.light_gcn_recommender.fit()
+
+    def fit_with_weights(self, df_train, items, interactions, df_interactions, user_ids, item_ids
+                         ,twin_towers_model_weights_path,light_gcn_weights_path):
+        self.items = items
+        self.interactions = interactions
+        # 协同过滤和冷启动推荐器
+        self.cf_recommender.fit(interactions, self.cf_topk)
+        self.cold_start_recommender.fit(items)
+        # 双塔模型推荐器
+        self.twin_towers_model_recommender.load_twin_towers_model(df_train,twin_towers_model_weights_path)
+        self.twin_towers_model_recommender.fit(items)  # 计算物品特征向量，加入faiss
+        # LightGCN
+        self.light_gcn_recommender.load_light_gcn(self.n_layers, user_ids, item_ids, self.emb_dim, df_interactions,light_gcn_weights_path)
         self.light_gcn_recommender.fit()
 
     def recall(self,user_profile:UserProfile)->set[int]:
