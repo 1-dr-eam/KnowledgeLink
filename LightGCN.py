@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 from torch import optim
+import pandas as pd
 from utils import bpr_loss
 from dataset import GraphDataset
 import faiss
@@ -50,24 +51,24 @@ class LightGCNRecommender(nn.Module):
         self.items_embedding = None
 
         self.item_idx2id = item_idx2id
-        self.topk=5
+        self.topk=50
         self.faiss_index = None
 
     def train_light_gcn(self,n_layers,user_ids,item_ids,embed_dim,df_interactions):
         print("LightGCN training...")
-        self.dataset=GraphDataset(user_ids,item_ids,df_interactions)
-        self.model = LightGCN(n_layers, len(user_ids), len(item_ids), embed_dim, self.dataset.norm_adj_matrix).to(device)
+        dataset=GraphDataset(user_ids,item_ids,df_interactions)
+        model = LightGCN(n_layers, len(user_ids), len(item_ids), embed_dim, dataset.norm_adj_matrix).to(device)
         # train
         epochs = 50
         batch_size = 200
         batch_num = 10  # 注意这里不是所有batch加起来是对所有数据过了一遍，因为generate是随机采样
-        optimizer = optim.Adam(self.model.parameters(), lr=0.01, weight_decay=0.001)  # weight_decay内置了L2正则化
+        optimizer = optim.Adam(model.parameters(), lr=0.01, weight_decay=0.001)  # weight_decay内置了L2正则化
+        model.train()
         for i in range(epochs):
-            self.model.train()
             sum_loss = 0.0
             for j in range(batch_num):
-                user_emb, item_emb = self.model.forward()
-                user_idxs, pos_item_idxs, neg_item_idxs = self.dataset.generate_batch(batch_size)
+                user_emb, item_emb = model.forward()
+                user_idxs, pos_item_idxs, neg_item_idxs = dataset.generate_batch(batch_size)
                 user_embs = user_emb[user_idxs]  # [B,emb_dim]
                 pos_item_embs = item_emb[pos_item_idxs]  # [B,emb_dim]
                 neg_item_embs = item_emb[neg_item_idxs]  # [B,emb_dim]
@@ -81,8 +82,135 @@ class LightGCNRecommender(nn.Module):
                 optimizer.step()
 
                 sum_loss += loss.item()
-            # print(f"epoch{i} bpr_loss: {sum_loss / batch_num}")
+
+        self.model = model
+        self.dataset = dataset
+        # 保存模型权重
+        torch.save(model.state_dict(),"model_weights/lightgcn.pth")
+
         print("LightGCN training finished")
+
+    def fine_tune_model_and_update_index(self, df_items, df_users, df_interactions):
+        """
+        使用每日新数据对LightGCN模型进行微调，并更新 Faiss 索引
+        Args:
+            df_items: 当日新物品数据
+            df_users: 当日新用户数据
+            df_interactions: 当日新交互数据
+        """
+        print("开始LightGCN模型微调和索引更新...")
+
+        # 合并新旧数据
+        print("合并新旧数据...")
+        # 获取当前模型的用户和物品ID列表
+        current_user_ids = list(self.dataset.user2idx.keys())
+        current_item_ids = list(self.dataset.item2idx.keys())
+
+        # 合并新旧用户和物品ID
+        all_user_ids = list(set(current_user_ids + list(df_users['user_id'])))
+        all_item_ids = list(set(current_item_ids + list(df_items['item_id'])))
+
+        # 合并新旧交互数据
+        combined_interactions = pd.concat([self.dataset.df_interactions, df_interactions], ignore_index=True)
+
+        # 重建数据集（包含新数据）
+        print("重建数据集...")
+        new_dataset = GraphDataset(all_user_ids, all_item_ids, combined_interactions)
+
+        # 微调模型
+        print("开始模型微调...")
+        # 扩展模型参数维度以适应新用户和新物品
+        old_user_emb = self.model.user_embedding.data
+        old_item_emb = self.model.item_embedding.data
+
+        new_n_users = len(all_user_ids)
+        new_n_items = len(all_item_ids)
+
+        # 创建新的embedding参数
+        new_user_embedding = nn.Parameter(torch.zeros(new_n_users, self.model.embed_dim))
+        new_item_embedding = nn.Parameter(torch.zeros(new_n_items, self.model.embed_dim))
+
+        # 复制旧参数
+        old_n_users, old_n_items = old_user_emb.shape[0], old_item_emb.shape[0]
+        new_user_embedding.data[:old_n_users] = old_user_emb
+        new_item_embedding.data[:old_n_items] = old_item_emb
+
+        # 初始化新参数
+        nn.init.xavier_uniform_(new_user_embedding[old_n_users:])
+        nn.init.xavier_uniform_(new_item_embedding[old_n_items:])
+
+        # 替换模型参数
+        self.model.user_embedding = new_user_embedding
+        self.model.item_embedding = new_item_embedding
+        self.model.n_users = new_n_users
+        self.model.n_items = new_n_items
+        self.model.adj_matrix = new_dataset.norm_adj_matrix.to(device)
+
+        # 微调参数
+        optimizer = optim.Adam(self.model.parameters(), lr=0.001, weight_decay=0.001)
+
+        # 微调训练
+        self.model.train()
+        epochs = 10  # 微调轮数较少
+        batch_size = 200
+        batch_num = 5  # 微调时减少batch数量
+
+        for i in range(epochs):
+            sum_loss = 0.0
+            for j in range(batch_num):
+                user_emb, item_emb = self.model.forward()
+                user_idxs, pos_item_idxs, neg_item_idxs = new_dataset.generate_batch(batch_size)
+                user_embs = user_emb[user_idxs]  # [B,emb_dim]
+                pos_item_embs = item_emb[pos_item_idxs]  # [B,emb_dim]
+                neg_item_embs = item_emb[neg_item_idxs]  # [B,emb_dim]
+
+                pos_scores = (user_embs * pos_item_embs).sum(dim=1)  # [B,1]
+                neg_scores = (user_embs * neg_item_embs).sum(dim=1)  # [B,1]
+                loss = bpr_loss(pos_scores, neg_scores)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                sum_loss += loss.item()
+
+        # 更新dataset引用
+        self.dataset = new_dataset
+        # 保存模型权重
+        torch.save(self.model.state_dict(), "model_weights/lightgcn.pth")
+
+        print(f"模型微调完成")
+
+        # 重新计算Embeddings
+        print("重新计算用户和物品Embeddings...")
+        self.users_embedding, self.items_embedding = self.model.forward()
+
+        # 重建Faiss索引
+        print("重建Faiss索引...")
+        # 更新item_idx2id映射（如果新物品被添加）
+        for idx, id in enumerate(all_item_ids):
+            if idx not in self.item_idx2id:
+                self.item_idx2id[idx] = id
+
+        # 删除旧索引
+        if hasattr(self, 'faiss_index') and self.faiss_index is not None:
+            del self.faiss_index
+
+        # 创建新索引
+        self.initialize_faiss_index()
+
+        print("LightGCN模型微调和索引更新完成！")
+
+    def load_light_gcn(self,n_layers,user_ids,item_ids,embed_dim,df_interactions,path):
+        """用训练好的权重直接载入模型"""
+        print("LightGCN loading...")
+        dataset = GraphDataset(user_ids, item_ids, df_interactions)
+        model = LightGCN(n_layers, len(user_ids), len(item_ids), embed_dim, dataset.norm_adj_matrix).to(device)
+
+        model.load_state_dict(torch.load(path))
+        self.model=model
+
+        print("LightGCN loading finished")
 
     def fit(self):
         self.users_embedding, self.items_embedding = self.model.forward()
@@ -128,7 +256,7 @@ class LightGCNRecommender(nn.Module):
 
         print("LightGCN faiss index finished")
 
-    def recommend_for_user(self, user_idx, top_k=5):
+    def recommend_for_user(self, user_idx, top_k=50):
         """
         使用Faiss向量数据库为用户推荐物品
         Args:
@@ -156,3 +284,26 @@ class LightGCNRecommender(nn.Module):
         recommended_item_ids = [self.item_idx2id[idx] for idx in indices[0]]
 
         return set(recommended_item_ids)
+
+if __name__ == "__main__":
+    # 加载训练数据
+    print("data preparing...")
+    # 准备物品数据
+    df_items = pd.read_csv("data/items_new.csv", encoding="utf-8")
+    df_items['item_keywords'] = df_items['item_keywords'].apply(lambda x: tuple(x.split(';')))
+    item_idx2id={}
+    for idx,id in enumerate(list(df_items['item_id'])):
+        item_idx2id[idx] = id
+    # 准备用户数据
+    df_users = pd.read_csv("data/users_new.csv", encoding="utf-8")
+    df_users['user_categories'] = df_users['user_categories'].fillna('').apply(lambda x: tuple(x.split(';')))
+    df_users['user_keywords'] = df_users['user_keywords'].fillna('').apply(lambda x: tuple(x.split(';')))
+    # 准备交互数据
+    df_interactions = pd.read_csv("data/interactions_new.csv", encoding="utf-8")
+    print("data finished\n")
+    user_ids = list(df_users['user_id'])  # 用户ID列表
+    item_ids = list(df_items['item_id'])  # 物品ID列表
+
+    recommender = LightGCNRecommender(item_idx2id)
+    recommender.train_light_gcn(2,user_ids,item_ids,64,df_interactions)
+    """最佳参数: {'n_layers': 2, 'embed_dim': 64, 'lr': 0.01, 'weight_decay': 0.001, 'epochs': 50}"""
