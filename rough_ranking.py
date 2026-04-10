@@ -5,8 +5,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torch.optim as optim
 from feature_processor import FeatureProcessor
-from utils import collate_fn_three_towers
+from utils import collate_fn_three_towers,fusion_formula
 from dataset import ThreeTowerDataset
+import math
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -188,7 +189,7 @@ class RoughRankingRecommender:
                                         self.user_continuous_cols, self.item_continuous_cols,
                                         self.scene_discrete_cols, self.stat_cont_cols)
 
-        # ========= 4. 数据加载器 =========
+        # ========= 数据加载器 =========
         train_dataset = ThreeTowerDataset(df_train, processor,
                                           self.user_discrete_cols, self.item_discrete_cols,
                                           self.scene_discrete_cols, self.user_continuous_cols, self.item_continuous_cols,
@@ -259,7 +260,43 @@ class RoughRankingRecommender:
         self.model=model
         self.processor=processor
 
+        # 保存模型权重
+        torch.save(model.state_dict(), "model_weights/three_towers_model.pth")
+
         print("three towers model training finished")
+
+    def load_three_towers_model(self,df_train,path):
+        """用训练好的权重直接载入模型"""
+        print("three towers model loading...")
+        # ========== 特征预处理 ==========
+        processor = FeatureProcessor()
+        processor.build_vocab_and_scale(df_train,
+                                        self.user_discrete_cols, self.item_discrete_cols,
+                                        self.user_continuous_cols, self.item_continuous_cols,
+                                        self.scene_discrete_cols, self.stat_cont_cols)
+
+        # ========== 模型初始化 ==========
+        model = ThreeTowerModel(
+            n_users=len(processor.user_id_vocab),
+            n_items=len(processor.item_id_vocab),
+            user_discrete_sizes=[len(processor.user_discrete_vocab[col]) for col in self.user_discrete_cols],
+            user_cont_dim=len(self.user_continuous_cols),
+            scene_discrete_sizes=[len(processor.scene_discrete_vocab[col]) for col in self.scene_discrete_cols],
+            item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in self.item_discrete_cols],
+            item_cont_dim=len(self.item_continuous_cols),
+            stat_cont_dim=len(self.stat_cont_cols),
+            user_tower_hidden=[32, 16],
+            item_tower_hidden=[32, 16],
+            cross_tower_hidden=[16],
+            mlp_hidden=[16, 16],
+            n_tasks=4
+        ).to(device)
+
+        model.load_state_dict(torch.load(path))
+        self.model = model
+        self.processor = processor
+
+        print("three towers model loading finished")
 
     def calculate_item_features(self,df_items):
         """
@@ -274,15 +311,14 @@ class RoughRankingRecommender:
         item_features = self.model.forward_item(item_ids, item_discrete, item_continuous)
         self.item_features_dict = {idx_id_dict[idx]:feature for idx,feature in enumerate(torch.unbind(item_features, dim=0))}
 
-    def fusion_formula(self,click_pred, cart_pred, forward_pred, buy_pred):
-        return 0.4 * click_pred + 0.1 * cart_pred + 0.3 * forward_pred + 0.2 * buy_pred
-
-    def rough_ranking(self,df_user_profile,df_recall_items,df_scene)->set[int]:
+    def rough_ranking(self,df_user_profile,df_recall_items,df_scene,topk=100)->set[int]:
         """
         在线推荐的粗排过程
         Args:
             df_user_profile:一个用户的画像、统计特征
             df_recall_items:n个物品的画像、统计特征
+            df_scene:当前的场景特征
+            topk:截断前topk个
         """
         if self.model is None or self.processor is None:
             raise ValueError("请先调用train_three_towers_model训练三塔模型")
@@ -318,12 +354,34 @@ class RoughRankingRecommender:
         item_score = dict()  # 物品粗排分数字典，{item_id:score}
         click_preds, cart_preds, forward_preds, buy_preds = self.model.forward_mlps(feature_vectors)
         for i in range(len(feature_vectors)):
-            item_score[idx_id_dict[i]]=self.fusion_formula(click_preds[i], cart_preds[i], forward_preds[i], buy_preds[i])
+            item_score[idx_id_dict[i]]=fusion_formula(click_preds[i], cart_preds[i], forward_preds[i], buy_preds[i])
         # 根据粗排分数截断返回
-        topn = heapq.nlargest(5, item_score.items(), key=lambda x: x[1])
+        final_topk = max(int(math.sqrt(len(df_recall_items))),topk)
+        topn = heapq.nlargest(final_topk, item_score.items(), key=lambda x: x[1])
         rough_ranking_ids = [x[0] for x in topn]
 
         print("粗排后剩余物品ID:", rough_ranking_ids)
         print("rough ranking finished\n")
 
         return set(rough_ranking_ids)
+
+if __name__ == "__main__":
+    # 加载训练数据
+    print("data preparing...")
+    # 准备物品数据
+    df_items = pd.read_csv("data/items_new.csv", encoding="utf-8")
+    df_items['item_keywords'] = df_items['item_keywords'].apply(lambda x: tuple(x.split(';')))
+    # 准备用户数据
+    df_users = pd.read_csv("data/users_new.csv", encoding="utf-8")
+    df_users['user_categories'] = df_users['user_categories'].fillna('').apply(lambda x: tuple(x.split(';')))
+    df_users['user_keywords'] = df_users['user_keywords'].fillna('').apply(lambda x: tuple(x.split(';')))
+    # 准备交互数据
+    df_interactions = pd.read_csv("data/interactions_new.csv", encoding="utf-8")
+    # 准备双塔模型，三塔模型和精排多目标模型训练数据(根据交互记录)
+    df_merge = pd.merge(df_interactions, df_users, how='left', on='user_id')
+    df_train = pd.merge(df_merge, df_items, how='left', on='item_id')
+    print("data finished\n")
+
+    recommender = RoughRankingRecommender()
+    recommender.train_three_towers_model(df_train)
+    """最佳参数: {'user_tower_hidden': [32, 16], 'item_tower_hidden': [32, 16], 'cross_tower_hidden': [16], 'mlp_hidden': [16, 16], 'learning_rate': 0.001, 'batch_size': 256, 'epochs': 10}"""
