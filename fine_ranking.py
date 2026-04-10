@@ -2,9 +2,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+import pandas as pd
 from feature_processor import FeatureProcessor
 from dataset import ThreeTowerDataset
-from utils import collate_fn_three_towers
+from rough_ranking import RoughRankingRecommender
+from utils import collate_fn_three_towers,fusion_formula
 from DCN import DCN
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -22,7 +24,8 @@ class MultiTaskNet(nn.Module):
                  stat_cont_dim,
                  # 主干神经网络部分
                  hidden_dims=[128, 64],
-                 n_tasks=4):
+                 n_tasks=4,
+                 n_layers=2):
         super().__init__()
 
         # 用户特征（embedding层，ID映射为32维，其他离散特征映射为16维）
@@ -45,7 +48,7 @@ class MultiTaskNet(nn.Module):
         total_input_dim = user_input_dim + item_input_dim + scene_input_dim + cross_input_dim
 
         # 主干网络
-        self.backbone = DCN(2,total_input_dim,hidden_dims).to(device) # 输出维度是hidden_dims[-1]
+        self.backbone = DCN(n_layers,total_input_dim,hidden_dims).to(device) # 输出维度是hidden_dims[-1]
 
         # 多任务头
         self.task_heads = []
@@ -136,7 +139,8 @@ class FineRankingRecommender:
             item_cont_dim=len(self.item_cont_cols),
             stat_cont_dim=len(self.stat_cont_cols),
             hidden_dims=[128, 64],
-            n_tasks=len(self.target_cols)
+            n_tasks=len(self.target_cols),
+            n_layers=2
         ).to(device)
 
         # ========== 定义损失函数和优化器 ==========
@@ -181,7 +185,41 @@ class FineRankingRecommender:
         self.model=model
         self.processor=processor
 
+        # 保存模型权重
+        torch.save(model.state_dict(), "model_weights/multi_task_model.pth")
+
         print("multi-task model training finished")
+
+    def load_multi_task_model(self,df_train,path):
+        """用训练好的权重直接载入模型"""
+        print("multi-task model loading...")
+        # 使用特征处理器
+        processor = FeatureProcessor()
+        processor.build_vocab_and_scale(df_train,
+                                        self.user_discrete_cols, self.item_discrete_cols,
+                                        self.user_cont_cols, self.item_cont_cols,
+                                        self.scene_discrete_cols, self.stat_cont_cols)
+
+        # ========== 定义模型 ==========
+        model = MultiTaskNet(
+            n_users=len(processor.user_id_vocab),
+            n_items=len(processor.item_id_vocab),
+            user_discrete_sizes=[len(processor.user_discrete_vocab[col]) for col in self.user_discrete_cols],
+            user_cont_dim=len(self.user_cont_cols),
+            scene_discrete_sizes=[len(processor.scene_discrete_vocab[col]) for col in self.scene_discrete_cols],
+            item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in self.item_discrete_cols],
+            item_cont_dim=len(self.item_cont_cols),
+            stat_cont_dim=len(self.stat_cont_cols),
+            hidden_dims=[128, 64],
+            n_tasks=len(self.target_cols),
+            n_layers=2
+        ).to(device)
+
+        model.load_state_dict(torch.load(path))
+        self.model=model
+        self.processor=processor
+
+        print("multi-task model loading finished")
 
     def fine_ranking(self, df)->dict:
         """
@@ -212,8 +250,8 @@ class FineRankingRecommender:
         # 融分公式融合排序
         for i in range(len(item_ids)):
             # 这里的item_id其实是索引
-            item_index_score[int(item_ids[i])] = (0.4 * float(click_pred[i].detach()) + 0.1 * float(like_pred[i].detach())
-                                                 + 0.3 * float(collect_pred[i].detach()) + 0.2 * float(forward_pred[i].detach()))
+            item_index_score[int(item_ids[i])] = fusion_formula(float(click_pred[i].detach()) ,float(like_pred[i].detach())
+                                                 ,float(collect_pred[i].detach()) ,float(forward_pred[i].detach()))
         # 带着精排分数返回，不做截断
         index_id_dict = {index: id for id, index in self.processor.item_id_vocab.items()}
         item_id_score={index_id_dict[index]:score for index,score in item_index_score.items()} # item_id->fine ranking score
@@ -222,3 +260,23 @@ class FineRankingRecommender:
         print("fine ranking finished\n")
 
         return item_id_score
+
+if __name__ == "__main__":
+    print("data preparing...")
+    # 准备物品数据
+    df_items = pd.read_csv("data/items_new.csv", encoding="utf-8")
+    df_items['item_keywords'] = df_items['item_keywords'].apply(lambda x: tuple(x.split(';')))
+    # 准备用户数据
+    df_users = pd.read_csv("data/users_new.csv", encoding="utf-8")
+    df_users['user_categories'] = df_users['user_categories'].fillna('').apply(lambda x: tuple(x.split(';')))
+    df_users['user_keywords'] = df_users['user_keywords'].fillna('').apply(lambda x: tuple(x.split(';')))
+    # 准备交互数据
+    df_interactions = pd.read_csv("data/interactions_new.csv", encoding="utf-8")
+    # 准备双塔模型，三塔模型和精排多目标模型训练数据(根据交互记录)
+    df_merge = pd.merge(df_interactions, df_users, how='left', on='user_id')
+    df_train = pd.merge(df_merge, df_items, how='left', on='item_id')
+    print("data finished\n")
+
+    recommender = FineRankingRecommender()
+    recommender.train_multi_task_model(df_train)
+    """最佳参数: {'hidden_dims': [128, 64], 'n_cross_layers': 2, 'learning_rate': 0.01, 'batch_size': 256, 'epochs': 1}"""
