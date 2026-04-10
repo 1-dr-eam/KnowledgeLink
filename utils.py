@@ -69,6 +69,12 @@ def bpr_loss(pos_scores,neg_scores)->torch.Tensor:
     bpr=-1.0*torch.sum(torch.log(torch.sigmoid(diff)))
     return bpr
 
+def fusion_formula(click_pred, cart_pred, forward_pred, buy_pred)->float:
+    """
+    简单的融分公式
+    """
+    return 0.4 * click_pred + 0.1 * cart_pred + 0.3 * forward_pred + 0.2 * buy_pred
+
 async def getItems(df_items)->List[Item]:
     """
     Dataframe 转 Item 对象列表
