@@ -157,7 +157,7 @@ class TwoTowersModelRecommender:
         dataloader = DataLoader(dataset, batch_size=256, shuffle=True, collate_fn=collate_fn_two_towers)
 
         # ========== 训练循环 ==========
-        for epoch in range(50):
+        for epoch in range(20):
             model.train()
             total_loss = 0
             for batch in dataloader:
@@ -185,11 +185,143 @@ class TwoTowersModelRecommender:
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
+            print("epoch %d, loss %f" % (epoch, total_loss/len(dataloader)))
 
         self.model = model
         self.processor = processor
+        # 保存模型权重
+        torch.save(model.state_dict(),"model_weights/twin_towers_model.pth")
 
         print("twin towers model training finished")
+
+    def fine_tune_model_and_update_processor(self, df_items, df_users, df_interactions):
+        """
+        使用每日新数据对模型进行微调，并更新Processor
+        Args:
+            df_items: 当日新物品数据
+            df_users: 当日新用户数据
+            df_interactions: 当日新交互数据
+        """
+        print("开始模型微调和 processor 更新...")
+
+        # 内部concat得到训练数据
+        df_merge = pd.merge(df_interactions, df_users, how='left', on='user_id')
+        df_daily_data = pd.merge(df_merge, df_items, how='left', on='item_id')
+
+        # 更新Processor的词汇表和标准化器
+        print("更新Processor...")
+        # 将新数据与旧数据合并，以确保包含所有历史ID
+        combined_df = pd.concat([df_daily_data, pd.DataFrame({
+            'user_id': list(self.processor.user_id_vocab.keys()),
+            'item_id': list(self.processor.item_id_vocab.keys())
+        }).drop_duplicates()], ignore_index=True)
+
+        # 重新构建词汇表（增量更新）
+        new_user_ids = set(combined_df['user_id']) | set(self.processor.user_id_vocab.keys())
+        self.processor.user_id_vocab = {uid: i for i, uid in enumerate(sorted(new_user_ids))}
+
+        new_item_ids = set(combined_df['item_id']) | set(self.processor.item_id_vocab.keys())
+        self.processor.item_id_vocab = {iid: i for i, iid in enumerate(sorted(new_item_ids))}
+
+        # 重新构建离散特征词汇表（包含新特征值）
+        for col in self.user_discrete_cols:
+            unique_vals = set(combined_df[col].values) | set(self.processor.user_discrete_vocab[col].keys())
+            self.processor.user_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
+
+        for col in self.item_discrete_cols:
+            unique_vals = set(combined_df[col].values) | set(self.processor.item_discrete_vocab[col].keys())
+            self.processor.item_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
+
+        # 重新拟合标准化器（包含新数据）
+        if self.user_continuous_cols:
+            all_user_data = pd.concat([
+                combined_df[self.user_continuous_cols],
+                pd.DataFrame(columns=self.user_continuous_cols)
+            ])
+            self.processor.user_cont_scaler.partial_fit(all_user_data.values)
+
+        if self.item_continuous_cols:
+            all_item_data = pd.concat([
+                combined_df[self.item_continuous_cols],
+                pd.DataFrame(columns=self.item_continuous_cols)
+            ])
+            self.processor.item_cont_scaler.partial_fit(all_item_data.values)
+
+        print(f"更新完成: 用户数 {len(self.processor.user_id_vocab)}, 物品数 {len(self.processor.item_id_vocab)}")
+
+        # 3. 微调模型
+        print("开始模型微调...")
+        optimizer = optim.Adam(self.model.parameters(), lr=1e-4)  # 使用较小的学习率
+        criterion = nn.MSELoss()
+
+        # 创建微调数据集
+        dataset = TwoTowerDataset(
+            df_daily_data, self.processor,
+            self.user_discrete_cols, self.item_discrete_cols,
+            self.user_continuous_cols, self.item_continuous_cols,
+            n_neg=1  # 微调时可以减少负采样数量以加快速度
+        )
+        dataloader = DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=collate_fn_two_towers)
+
+        self.model.train()
+        total_loss = 0
+        for batch in dataloader:
+            user_feat = [x.to(device) for x in batch['user_feat']]
+            pos_item_feat = [x.to(device) for x in batch['pos_item_feat']]
+            neg_item_feats = [[x.to(device) for x in neg] for neg in batch['neg_item_feats']]
+
+            pos_score = self.model(*user_feat, *pos_item_feat)
+            neg_scores = []
+            for neg_feat in neg_item_feats:
+                neg_score = self.model(*user_feat, *neg_feat)
+                neg_scores.append(neg_score)
+            neg_scores = torch.stack(neg_scores, dim=1)
+
+            batch_size = pos_score.size(0)
+            targets = torch.cat([
+                torch.ones(batch_size, 1, device=device),
+                -torch.ones(batch_size, len(neg_item_feats), device=device)
+            ], dim=1)
+            all_scores = torch.cat([pos_score.unsqueeze(1), neg_scores], dim=1)
+            loss = criterion(all_scores, targets)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+
+        # 保存模型权重
+        torch.save(self.model.state_dict(), "model_weights/twin_towers_model.pth")
+        print(f"模型微调完成，平均损失: {total_loss / len(dataloader):.4f}")
+
+
+    def load_twin_towers_model(self,df_train,path):
+        """用训练好的权重直接载入模型"""
+        print("twin towers model loading...")
+        # ============ 预处理 ============
+        processor = FeatureProcessor()
+        processor.build_vocab_and_scale(
+            df_train, self.user_discrete_cols, self.item_discrete_cols,
+            self.user_continuous_cols, self.item_continuous_cols
+        )
+
+        # ========== 模型与数据加载器 ==========
+        model = TwoTowersModel(
+            n_users=len(processor.user_id_vocab),
+            n_items=len(processor.item_id_vocab),
+            user_discrete_sizes=[len(processor.user_discrete_vocab[col]) for col in self.user_discrete_cols],
+            item_discrete_sizes=[len(processor.item_discrete_vocab[col]) for col in self.item_discrete_cols],
+            user_cont_dim=len(self.user_continuous_cols),
+            item_cont_dim=len(self.item_continuous_cols),
+            embed_dim=64,
+            tower_hidden=[128, 64]
+        ).to(device)
+
+        model.load_state_dict(torch.load(path))
+        self.model=model
+        self.processor = processor
+
+        print("twin towers model loading finished")
 
     def preprocess_user_feature(self, user_profile):
         """
@@ -304,10 +436,13 @@ class TwoTowersModelRecommender:
         print("twin towers model faiss index finished")
 
     def fit(self,all_item_features):
+        """
+        可用于系统初始化，也可用于每日的微调时重建索引，逻辑是一样的，只需传入全部的物品对象列表
+        """
         self.compute_all_item_vectors(all_item_features)
         self.initialize_faiss_index()
 
-    def recommend_for_user(self, user_profile, top_k=10):
+    def recommend_for_user(self, user_profile, top_k=50):
         """
         使用 Faiss 向量数据库为特定用户进行召回
         Args:
@@ -338,3 +473,24 @@ class TwoTowersModelRecommender:
             return set(recommended_item_ids)
         else:
             raise ValueError("请先调用 initialize_faiss_index 构建 Faiss 索引")
+
+if __name__ == "__main__":
+    # 加载训练数据
+    print("data preparing...")
+    # 准备物品数据
+    df_items = pd.read_csv("data/items_new.csv", encoding="utf-8")
+    df_items['item_keywords'] = df_items['item_keywords'].apply(lambda x: tuple(x.split(';')))
+    # 准备用户数据
+    df_users = pd.read_csv("data/users_new.csv", encoding="utf-8")
+    df_users['user_categories'] = df_users['user_categories'].fillna('').apply(lambda x: tuple(x.split(';')))
+    df_users['user_keywords'] = df_users['user_keywords'].fillna('').apply(lambda x: tuple(x.split(';')))
+    # 准备交互数据
+    df_interactions = pd.read_csv("data/interactions_new.csv", encoding="utf-8")
+    # 准备双塔模型，三塔模型和精排多目标模型训练数据(根据交互记录)
+    df_merge = pd.merge(df_interactions, df_users, how='left', on='user_id')
+    df_train = pd.merge(df_merge, df_items, how='left', on='item_id')
+    print("data finished\n")
+
+    # 训练并保存权重
+    recommender = TwoTowersModelRecommender()
+    recommender.train_twin_towers_model(df_train)
