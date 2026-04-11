@@ -56,12 +56,14 @@
 本项目所用的数据集只有一部分书籍信息是真实的，其他都是用AI工具生成的模拟的用户数据和交互记录，很大程度上只是为了模拟大数据量场景，进而做性能优化  
 这样的数据集无法用于科研等严肃领域，也不涉及隐私问题
 ## Dependency
-在运行本项目前，你需要配置合适的 Python 环境，你需要下载提供的environment.yml文件，然后在conda中运行：
+在运行本项目前，你需要配置合适的 Python 环境，你需要下载提供的environment.yml文件，然后在Anaconda prompt中运行：
 >conda env create -f environment.yml
 
 该命令会自动新建一个默认名称为 rs_project 的 conda 环境并导入所需的包，之后别忘了激活这个环境，运行：
 >conda activate rs_project
 
+最后一步需要单独安装GPU版本的Pytorch，运行：
+>pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 ## Usage
 在使用/interface中的外部接口之前，你需要先做以下准备：  
 >将main.py中的uvicorn.run函数参数修改为你自己的IP地址和端口号
