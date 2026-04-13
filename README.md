@@ -105,4 +105,4 @@
 **Code:** The source code in this repository is licensed under the **MIT License**.  
 **Weights:** The pre-trained model weights (in the `/model_weights` directory) are also licensed under the **MIT License**.
 
-Copyright (c) 2026 [ChendiLiu]
+Copyright (c) 2026 ChendiLiu
