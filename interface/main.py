@@ -5,9 +5,10 @@ from typing import List
 import logging
 import uuid
 import torch
+from entities import Item
 from interface.database import BookAndInteractionDBSession, UserDBSession
 from interface.recommender_system import RecommenderSystem  # 推荐系统类
-from interface.db_utils import prepare_user_data,prepare_book_and_interaction_data
+from interface.db_utils import *
 from contextlib import asynccontextmanager
 from utils import getItems
 
@@ -73,7 +74,12 @@ class RecommendationResponse(BaseModel):
     recommendations: List[int]
     request_id: str
 
-class ErrorResponse(BaseModel):
+class FineTuningRequest(BaseModel):
+    # 传入的是类似"2026-04-09 16:54:13"这样的字符串
+    start_time:str
+    end_time:str
+
+class Response(BaseModel):
     status: str
     message: str
 
@@ -94,40 +100,60 @@ async def get_recommendations_from_model(user_id: int, hour: int, is_weekend:boo
 
     logging.info(f"Generating recommendations for user '{user_id}' using the real model...")
 
-    try:
-        predicted_item_ids = recsys_model.recommend(user_id,hour,is_weekend,is_holiday)
-        logging.info(f"Successfully generated {len(predicted_item_ids)} recommendations for user '{user_id}'.")
-        return predicted_item_ids
-
-    except KeyError as e:
-        logging.warning(f"User '{user_id}' not found in model data. Returning empty list or handling cold start.")
-        raise HTTPException(status_code=404, detail=f"User '{user_id}' not found.")
-
-    except Exception as e:
-        logging.error(f"Error during prediction for user '{user_id}': {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error during recommendation prediction.")
+    predicted_item_ids = recsys_model.recommend(user_id,hour,is_weekend,is_holiday)
+    logging.info(f"Successfully generated {len(predicted_item_ids)} recommendations for user '{user_id}'.")
+    return predicted_item_ids
 
 # ========= 每日微调函数 ==========
-async def models_fine_tuning(df_items, df_users, df_interactions):
+async def models_fine_tuning(start_time,end_time)->bool:
     """
     Args:
-            df_items: 当日新物品数据
-            df_users: 当日新用户数据
-            df_interactions: 当日新交互数据
+        start_time:起始时间戳
+        end_time:终止时间戳
     """
+    global recsys_model
+    if not recsys_model:
+        raise RuntimeError("RecSys model is not initialized")
     logging.info("Model fine-tuning started...")
 
-    global recsys_model
-    items= await getItems(df_items) # 当日新增的物品对象列表
-    recsys_model.fine_tuning(df_items, df_users, df_interactions,items)
+    try:
+        async with BookAndInteractionDBSession() as book_and_interaction_session:
+            df_items, df_interactions = await get_book_and_interaction_data_by_time(book_and_interaction_session,
+                                                                                    start_time, end_time)
+        async with UserDBSession() as user_session:
+            df_users = await get_user_data_by_time(user_session, start_time, end_time)
 
-    logging.info("Model fine-tuning finished")
+        if df_items.empty:
+            logging.info("微调时查询到的新物品列表为空")
+        if df_users.empty:
+            logging.info("微调时查询到的新用户列表为空")
+        if df_interactions.empty:
+            logging.info("微调时查询到的新交互记录为空")
+
+        logging.info("loading new data from database finished")
+    except Exception as e:
+        logging.error(f"Error during loading new data from database: {str(e)}")
+        return False
+
+    try:
+        items = await getItems(df_items)  # 当日新增的物品对象列表
+        recsys_model.fine_tuning(df_items, df_users, df_interactions, items)
+        logging.info("Model fine-tuning finished")
+        return True
+    except Exception as e:
+        logging.error(f"Error during model fine-tuning: {str(e)}")
+        return False
+    # items = await getItems(df_items)  # 当日新增的物品对象列表
+    # recsys_model.fine_tuning(df_items, df_users, df_interactions, items)
+    # logging.info("Model fine-tuning finished")
+    # return True
+
 
 # =========== 接口路由 ===========
 # 推荐接口
 @app.post("/recommend",
               response_model=RecommendationResponse,
-          responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+          responses={400: {"model": Response}, 404: {"model": Response},500: {"model": Response}},
           summary="Get Recommendations for a User")
 async def recommend(request: RecommendationRequest):
     user_id = request.user_id
@@ -135,20 +161,63 @@ async def recommend(request: RecommendationRequest):
     is_weekend = request.is_weekend
     is_holiday = request.is_holiday
 
-    # recommendations是推荐的物品ID列表，顺序是有意义的
-    recommendations = await get_recommendations_from_model(
-        user_id=user_id,
-        hour=hour,
-        is_weekend=is_weekend,
-        is_holiday=is_holiday
-    )
+    if not (user_id and hour and is_weekend and is_holiday):
+        logging.error("recommend failed : Missing request parameters ")
+        return Response(
+            status = "error",
+            message = "Missing request parameters"
+        )
 
-    return RecommendationResponse(
-        status="success",
-        user_id=user_id,
-        recommendations=recommendations,
-        request_id=str(uuid.uuid4())
-    )
+    try:
+        # recommendations是推荐的物品ID列表，顺序是有意义的
+        recommendations = await get_recommendations_from_model(
+            user_id=user_id,
+            hour=hour,
+            is_weekend=is_weekend,
+            is_holiday=is_holiday
+        )
+        return RecommendationResponse(
+            status="success",
+            user_id=user_id,
+            recommendations=recommendations,
+            request_id=str(uuid.uuid4())
+        )
+    except KeyError as e:
+        logging.warning(f"User '{user_id}' not found in model data. Returning empty list or handling cold start.")
+        return Response(status="error", message=f"User '{user_id}' not found in model data")
+
+    except Exception as e:
+        logging.error(f"Error during prediction for user '{user_id}': {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during recommendation prediction.")
+
+
+@app.post("/fine_tuning",
+              response_model=Response,
+          responses={400: {"model": Response}, 404: {"model": Response},500: {"model": Response}},
+          summary="daily fine-tuning")
+async def fine_tuning(request: FineTuningRequest):
+    # 获取新数据的起止时间
+    start_time = request.start_time
+    end_time = request.end_time
+
+    if not (start_time and end_time):
+        logging.error("fine_tuning failed : Missing request parameters ")
+        return Response(
+            status = "error",
+            message = "Missing request parameters"
+        )
+
+    status=await models_fine_tuning(start_time, end_time)
+    if status:
+        return Response(
+            status="success",
+            message="Daily fine-tuning success",
+        )
+    else:
+        return Response(
+            status="error",
+            message=f"Daily fine-tuning failed",
+        )
 
 # 健康检查接口
 @app.get("/health", summary="Health Check")
@@ -161,4 +230,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="your_host", port=8000)
+    uvicorn.run(app, host="10.244.193.207", port=8000)
