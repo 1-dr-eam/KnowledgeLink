@@ -1,3 +1,5 @@
+import os
+import logging
 import math
 import torch
 import torch.nn as nn
@@ -94,24 +96,17 @@ class LightGCNRecommender(nn.Module):
         """
         使用每日新数据对LightGCN模型进行微调，并更新 Faiss 索引
         Args:
-            df_items: 当日新物品数据
-            df_users: 当日新用户数据
+            df_items: 全部物品数据
+            df_users: 全部用户数据
             df_interactions: 当日新交互数据
         """
         print("开始LightGCN模型微调和索引更新...")
+        # 目前的全部用户和物品ID
+        all_user_ids = list(set(list(df_users['user_id'])))
+        all_item_ids = list(set(list(df_items['item_id'])))
 
-        # 合并新旧数据
-        print("合并新旧数据...")
-        # 获取当前模型的用户和物品ID列表
-        current_user_ids = list(self.dataset.user2idx.keys())
-        current_item_ids = list(self.dataset.item2idx.keys())
-
-        # 合并新旧用户和物品ID
-        all_user_ids = list(set(current_user_ids + list(df_users['user_id'])))
-        all_item_ids = list(set(current_item_ids + list(df_items['item_id'])))
-
-        # 合并新旧交互数据
-        combined_interactions = pd.concat([self.dataset.df_interactions, df_interactions], ignore_index=True)
+        # 目前的全部交互数据
+        combined_interactions = df_interactions
 
         # 重建数据集（包含新数据）
         print("重建数据集...")
@@ -127,8 +122,8 @@ class LightGCNRecommender(nn.Module):
         new_n_items = len(all_item_ids)
 
         # 创建新的embedding参数
-        new_user_embedding = nn.Parameter(torch.zeros(new_n_users, self.model.embed_dim))
-        new_item_embedding = nn.Parameter(torch.zeros(new_n_items, self.model.embed_dim))
+        new_user_embedding = nn.Parameter(torch.zeros(new_n_users, self.model.embed_dim).to(device))
+        new_item_embedding = nn.Parameter(torch.zeros(new_n_items, self.model.embed_dim).to(device))
 
         # 复制旧参数
         old_n_users, old_n_items = old_user_emb.shape[0], old_item_emb.shape[0]
@@ -177,7 +172,8 @@ class LightGCNRecommender(nn.Module):
         # 更新dataset引用
         self.dataset = new_dataset
         # 保存模型权重
-        torch.save(self.model.state_dict(), "model_weights/lightgcn.pth")
+        # os.makedirs("model_weights", exist_ok=True)
+        torch.save(self.model.state_dict(), "../model_weights/lightgcn.pth")
 
         print(f"模型微调完成")
 

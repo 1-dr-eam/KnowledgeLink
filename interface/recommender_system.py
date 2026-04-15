@@ -179,3 +179,33 @@ class RecommenderSystem:
         print("recommend finished\n")
         return final_selected_items_ids
 
+    def fine_tuning(self, new_df_items, new_df_users, new_df_interactions, new_items):
+        """
+        模型微调，相应的数据结构能合并的合并，不能合并的重构
+        Args:
+            new_df_items: 当日新物品数据(可能为空)
+            new_df_users: 当日新用户数据(可能为空)
+            new_df_interactions: 当日新交互数据(可能为空)
+            new_items: 当日新增的物品对象列表(可能为空)
+        """
+        flag_items=flag_users=flag_interactions=False # 为True说明有新数据，False说明没有
+        # 合并新老对象，然后用更新后的对象去微调
+        if not new_df_items.empty:
+            flag_items=True
+            self.items.extend(new_items)
+            self.df_items=pd.concat([self.df_items,new_df_items],ignore_index=True)
+        if not new_df_users.empty:
+            flag_users=True
+            self.df_users=pd.concat([self.df_users,new_df_users],ignore_index=True)
+        if not new_df_interactions.empty:
+            flag_interactions=True
+            self.df_interactions=pd.concat([self.df_interactions,new_df_interactions],ignore_index=True)
+
+        self.recall_recommender.fine_tuning(self.df_items, self.df_users, self.df_interactions, new_df_interactions,self.items,flag_items,flag_users,flag_interactions)
+        # 包含fit
+        self.rough_ranking_recommender.fine_tune_three_towers_model(self.df_items, self.df_users, self.df_interactions, new_df_interactions,flag_items,flag_users,flag_interactions)
+        self.fine_ranking_recommender.fine_tune_multi_task_model(self.df_items, self.df_users, self.df_interactions,new_df_interactions,flag_items,flag_users,flag_interactions)
+        self.rearrangement_recommender.build_cosine_similarity_matrix(self.items)
+
+
+

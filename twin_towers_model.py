@@ -1,4 +1,6 @@
+import logging
 import math
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -194,63 +196,58 @@ class TwoTowersModelRecommender:
 
         print("twin towers model training finished")
 
-    def fine_tune_model_and_update_processor(self, df_items, df_users, df_interactions):
+    def fine_tune_model_and_update_processor(self, df_items, df_users, df_interactions,new_df_interactions):
         """
         使用每日新数据对模型进行微调，并更新Processor
         Args:
-            df_items: 当日新物品数据
-            df_users: 当日新用户数据
-            df_interactions: 当日新交互数据
+            df_items: 全部物品数据
+            df_users: 全部用户数据
+            df_interactions: 全部交互数据
+            new_df_interactions: 新增交互数据（不为空）
         """
-        print("开始模型微调和 processor 更新...")
+        if df_interactions.empty:
+            logging.info("新增交互记录为空，不需微调双塔模型")
+            return
+        print("开始双塔模型微调和 processor 更新...")
 
-        # 内部concat得到训练数据
-        df_merge = pd.merge(df_interactions, df_users, how='left', on='user_id')
-        df_daily_data = pd.merge(df_merge, df_items, how='left', on='item_id')
+        df_merge = pd.merge(new_df_interactions, df_users, how='left', on='user_id')
+        df_daily_data = pd.merge(df_merge, df_items, how='left', on='item_id') # 用来微调训练
+
+        all_df_merge = pd.merge(df_interactions, df_users, how='left', on='user_id')
+        all_df_information = pd.merge(all_df_merge, df_items, how='left', on='item_id') # 用来重建processor
 
         # 更新Processor的词汇表和标准化器
         print("更新Processor...")
-        # 将新数据与旧数据合并，以确保包含所有历史ID
-        combined_df = pd.concat([df_daily_data, pd.DataFrame({
-            'user_id': list(self.processor.user_id_vocab.keys()),
-            'item_id': list(self.processor.item_id_vocab.keys())
-        }).drop_duplicates()], ignore_index=True)
 
         # 重新构建词汇表（增量更新）
-        new_user_ids = set(combined_df['user_id']) | set(self.processor.user_id_vocab.keys())
+        new_user_ids = set(df_interactions['user_id']) | set(self.processor.user_id_vocab.keys())
         self.processor.user_id_vocab = {uid: i for i, uid in enumerate(sorted(new_user_ids))}
 
-        new_item_ids = set(combined_df['item_id']) | set(self.processor.item_id_vocab.keys())
+        new_item_ids = set(df_interactions['item_id']) | set(self.processor.item_id_vocab.keys())
         self.processor.item_id_vocab = {iid: i for i, iid in enumerate(sorted(new_item_ids))}
 
         # 重新构建离散特征词汇表（包含新特征值）
         for col in self.user_discrete_cols:
-            unique_vals = set(combined_df[col].values) | set(self.processor.user_discrete_vocab[col].keys())
+            unique_vals = set(all_df_information[col].values) | set(self.processor.user_discrete_vocab[col].keys())
             self.processor.user_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
 
         for col in self.item_discrete_cols:
-            unique_vals = set(combined_df[col].values) | set(self.processor.item_discrete_vocab[col].keys())
+            unique_vals = set(all_df_information[col].values) | set(self.processor.item_discrete_vocab[col].keys())
             self.processor.item_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
 
         # 重新拟合标准化器（包含新数据）
         if self.user_continuous_cols:
-            all_user_data = pd.concat([
-                combined_df[self.user_continuous_cols],
-                pd.DataFrame(columns=self.user_continuous_cols)
-            ])
+            all_user_data = all_df_information[self.user_continuous_cols]
             self.processor.user_cont_scaler.partial_fit(all_user_data.values)
 
         if self.item_continuous_cols:
-            all_item_data = pd.concat([
-                combined_df[self.item_continuous_cols],
-                pd.DataFrame(columns=self.item_continuous_cols)
-            ])
+            all_item_data = all_df_information[self.item_continuous_cols]
             self.processor.item_cont_scaler.partial_fit(all_item_data.values)
 
         print(f"更新完成: 用户数 {len(self.processor.user_id_vocab)}, 物品数 {len(self.processor.item_id_vocab)}")
 
         # 3. 微调模型
-        print("开始模型微调...")
+        print("开始双塔模型微调...")
         optimizer = optim.Adam(self.model.parameters(), lr=1e-4)  # 使用较小的学习率
         criterion = nn.MSELoss()
 
@@ -291,8 +288,9 @@ class TwoTowersModelRecommender:
             total_loss += loss.item()
 
         # 保存模型权重
-        torch.save(self.model.state_dict(), "model_weights/twin_towers_model.pth")
-        print(f"模型微调完成，平均损失: {total_loss / len(dataloader):.4f}")
+        # os.makedirs("model_weights", exist_ok=True)
+        torch.save(self.model.state_dict(), "../model_weights/twin_towers_model.pth")
+        print(f"双塔模型微调完成")
 
 
     def load_twin_towers_model(self,df_train,path):

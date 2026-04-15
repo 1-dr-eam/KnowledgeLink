@@ -1,3 +1,5 @@
+import logging
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -260,6 +262,122 @@ class FineRankingRecommender:
         print("fine ranking finished\n")
 
         return item_id_score
+
+    def fine_tune_multi_task_model(self, df_items, df_users, df_interactions,new_df_interactions,flag_items,flag_users,flag_interactions):
+        """
+        使用每日新数据对多目标精排模型进行微调，并更新Processor
+        Args:
+            df_items: 全部物品数据
+            df_users: 全部用户数据
+            df_interactions: 当日新交互数据
+        """
+        print("开始多目标精排模型微调...")
+
+        if flag_items or flag_users:
+            print("更新Processor...")
+            all_df_merge = pd.merge(df_interactions, df_users, how='left', on='user_id')
+            all_df_information = pd.merge(all_df_merge, df_items, how='left', on='item_id')  # 用来重建processor
+
+            # 获取当前词汇表
+            current_user_ids = set(self.processor.user_id_vocab.keys())
+            current_item_ids = set(self.processor.item_id_vocab.keys())
+            current_user_discrete_vals = {col: set(vocab.keys()) for col, vocab in
+                                          self.processor.user_discrete_vocab.items()}
+            current_item_discrete_vals = {col: set(vocab.keys()) for col, vocab in
+                                          self.processor.item_discrete_vocab.items()}
+            current_scene_discrete_vals = {col: set(vocab.keys()) for col, vocab in
+                                           self.processor.scene_discrete_vocab.items()}
+
+            # 重新构建词汇表
+            all_user_ids = set(all_df_information['user_id']) | current_user_ids
+            self.processor.user_id_vocab = {uid: i for i, uid in enumerate(sorted(all_user_ids))}
+
+            all_item_ids = set(all_df_information['item_id']) | current_item_ids
+            self.processor.item_id_vocab = {iid: i for i, iid in enumerate(sorted(all_item_ids))}
+
+            # 更新离散特征词汇表
+            for col in self.user_discrete_cols:
+                unique_vals = set(all_df_information[col].values) | current_user_discrete_vals.get(col, set())
+                self.processor.user_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
+
+            for col in self.item_discrete_cols:
+                unique_vals = set(all_df_information[col].values) | current_item_discrete_vals.get(col, set())
+                self.processor.item_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
+
+            for col in self.scene_discrete_cols:
+                unique_vals = set(all_df_information[col].values) | current_scene_discrete_vals.get(col, set())
+                self.processor.scene_discrete_vocab[col] = {val: i for i, val in enumerate(sorted(unique_vals))}
+
+            # 重新拟合标准化器
+            if self.user_cont_cols:
+                all_user_data = all_df_information[self.user_cont_cols]
+                self.processor.user_cont_scaler.partial_fit(all_user_data.values)
+
+            if self.item_cont_cols:
+                all_item_data = all_df_information[self.item_cont_cols]
+                self.processor.item_cont_scaler.partial_fit(all_item_data.values)
+
+            if self.stat_cont_cols:
+                all_stat_data = all_df_information[self.stat_cont_cols]
+                self.processor.stat_cont_scaler.partial_fit(all_stat_data.values)
+
+            print(f"Processor更新完成: 用户数 {len(self.processor.user_id_vocab)}, 物品数 {len(self.processor.item_id_vocab)}")
+
+        if flag_interactions:
+            df_merge = pd.merge(new_df_interactions, df_users, how='left', on='user_id')
+            df_daily_data = pd.merge(df_merge, df_items, how='left', on='item_id')
+
+            # 微调模型
+            print("开始精排模型微调...")
+            optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
+
+            # 创建微调数据集
+            fine_tune_dataset = ThreeTowerDataset(df_daily_data, self.processor,
+                                                  self.user_discrete_cols, self.item_discrete_cols,
+                                                  self.scene_discrete_cols, self.user_cont_cols, self.item_cont_cols,
+                                                  self.stat_cont_cols,
+                                                  self.target_cols)
+            fine_tune_loader = DataLoader(fine_tune_dataset, batch_size=128, shuffle=True,
+                                          collate_fn=collate_fn_three_towers)
+
+            self.model.train()
+            total_loss = 0
+            for epoch in range(1):  # 微调轮数少
+                for batch in fine_tune_loader:
+                    user_ids = batch['user_ids'].to(device)
+                    user_discrete = batch['user_discrete'].to(device)
+                    user_continuous = batch['user_continuous'].unsqueeze(1).to(device)
+                    scene_discrete = batch['scene_discrete'].to(device)
+                    item_ids = batch['item_ids'].to(device)
+                    item_discrete = batch['item_discrete'].to(device)
+                    item_continuous = batch['item_continuous'].unsqueeze(1).to(device)
+                    stat_continuous = batch['stat_continuous'].to(device)
+                    targets = batch['targets'].to(device)
+
+                    task_outputs = self.model(
+                        user_ids, user_discrete, user_continuous,
+                        item_ids, item_discrete, item_continuous,
+                        scene_discrete, stat_continuous
+                    )
+
+                    # 计算多任务损失
+                    criterion = nn.CrossEntropyLoss()
+                    total_loss_batch = 0.0
+                    for i, output in enumerate(task_outputs):
+                        task_loss = criterion(output.squeeze(), targets[:, i])
+                        total_loss_batch += task_loss
+
+                    optimizer.zero_grad()
+                    total_loss_batch.backward()
+                    optimizer.step()
+
+                    total_loss += total_loss_batch.item()
+
+            # 保存模型权重
+            # os.makedirs("model_weights", exist_ok=True)
+            torch.save(self.model.state_dict(), "../model_weights/multi_task_model.pth")
+
+        print("多目标精排模型微调完成！")
 
 if __name__ == "__main__":
     print("data preparing...")

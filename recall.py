@@ -511,3 +511,36 @@ class RecallRecommender:
         print("recall finished\n")
 
         return recall_items_ids
+
+    def fine_tuning(self, df_items, df_users, df_interactions, new_df_interactions,items,flag_items,flag_users,flag_interactions):
+        """
+        Args:
+            df_items: 全部物品数据
+            df_users: 全部用户数据
+            df_interactions: 全部交互数据
+            new_df_interactions: 新增交互数据（可能为空）
+            items: 全部物品对象列表
+        """
+        print("开始微调召回推荐器...")
+        if flag_items:
+            self.cold_start_recommender.fit(items)
+
+        if flag_items or flag_users or flag_interactions:
+            self.light_gcn_recommender.fine_tune_model_and_update_index(df_items, df_users,df_interactions)  # 包含了重建索引等fit过程
+
+        if flag_interactions:
+            self.twin_towers_model_recommender.fine_tune_model_and_update_processor(df_items, df_users, df_interactions,new_df_interactions)
+            self.twin_towers_model_recommender.fit(items)
+        elif flag_items:
+            self.twin_towers_model_recommender.fit(items)
+
+        if flag_interactions:
+            self.interactions = list(zip(
+                df_interactions['user_id'],
+                df_interactions['item_id'],
+                df_interactions['rating']
+            ))
+            self.cf_recommender.fit(self.interactions,10)
+
+
+        print("召回推荐器微调完成")
