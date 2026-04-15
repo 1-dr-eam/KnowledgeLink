@@ -1,3 +1,4 @@
+import logging
 from collections import deque
 from PIL import Image
 from io import BytesIO
@@ -46,25 +47,23 @@ class Item:
     def calculate_content_feature(self,model,preprocess):
         # 反爬措施，如果用的是自己的服务器可以不要
         headers = {
-            # 关键：设置 User-Agent，让服务器以为你是浏览器而不是脚本
+            # 设置 User-Agent，让服务器以为你是浏览器而不是脚本
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            # 关键：设置 Referer，告诉服务器图片是从豆瓣页面引用的（防止盗链保护）
             # "Referer": "https://movie.douban.com/"
         }
-        # 发送带有请求头的 GET 请求
-        response = requests.get(self.image, stream=True, headers=headers)
-
-        if response.status_code == 200:
-            # 将字节数据包装成文件对象
-            image_data = BytesIO(response.content)
-            # 使用Pillow打开图像
-            img = Image.open(image_data)
-            # 强转RGB图像
-            rgb_img = img.convert('RGB')
-        else:
-            print("error code:",response.status_code)
-            print("error message:",response.text)
-            raise IOError("读取图片数据失败")
+        try:
+            # 发送带有请求头的 GET 请求
+            response = requests.get(self.image, stream=True, headers=headers)
+            if response.status_code == 200:
+                # 将字节数据包装成文件对象
+                image_data = BytesIO(response.content)
+                # 使用Pillow打开图像
+                img = Image.open(image_data)
+                # 强转RGB图像
+                rgb_img = img.convert('RGB')
+        except Exception as e:
+            logging.error(f"request error, message:{e}")
+            raise RuntimeError("获取图片失败")
 
         with torch.no_grad():#非训练不需要梯度，节省显存
             image_tensor = preprocess(rgb_img).unsqueeze(0).to(device) # torch.Size([1, 3, 224, 224])
