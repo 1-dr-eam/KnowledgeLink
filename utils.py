@@ -1,4 +1,7 @@
 from typing import List
+
+import pandas as pd
+
 from entities import *
 import torch
 
@@ -79,6 +82,9 @@ async def getItems(df_items)->List[Item]:
     """
     Dataframe 转 Item 对象列表
     """
+    if df_items.empty:
+        return []
+
     clip_model, preprocess = clip.load("ViT-B/32", device=device)
     new_items = []
     for row in df_items.itertuples(index=True):  # index=True 获取原始的 DataFrame 索引
