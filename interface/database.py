@@ -2,12 +2,24 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 # ===== 数据库连接 URL =====
-BOOK_INTERACTION_DATABASE_URL = "mysql+aiomysql://username:password@host/kl_trade"
-USER_DATABASE_URL = "mysql+aiomysql://username:password@host/kl_user"
+BOOK_INTERACTION_DATABASE_URL = "mysql+aiomysql://kl_database:123456@175.27.129.187/kl_trade"
+USER_DATABASE_URL = "mysql+aiomysql://kl_database:123456@175.27.129.187/kl_user"
 # ===== 创建异步引擎 =====
 # 为三个数据库分别创建引擎
-book_and_interaction_db_engine = create_async_engine(BOOK_INTERACTION_DATABASE_URL,echo=True)
-user_db_engine = create_async_engine(USER_DATABASE_URL,echo=True)
+book_and_interaction_db_engine = create_async_engine(BOOK_INTERACTION_DATABASE_URL,
+                                                     pool_size = 10,  # 连接池大小
+                                                     max_overflow=20,  # 最大溢出连接数
+                                                     pool_recycle=3600,  # 连接回收时间（秒）
+                                                     pool_pre_ping=True,  # 连接预检测
+                                                     pool_timeout=60,  # 获取连接的超时时间
+                                                     echo=True)
+user_db_engine = create_async_engine(USER_DATABASE_URL,
+                                     pool_size=10,  # 连接池大小
+                                     max_overflow=20,  # 最大溢出连接数
+                                     pool_recycle=3600,  # 连接回收时间（秒）
+                                     pool_pre_ping=True,  # 连接预检测
+                                     pool_timeout=60,  # 获取连接的超时时间
+                                     echo=True)
 
 # 创建对应的会话工厂
 BookAndInteractionDBSession = sessionmaker(bind=book_and_interaction_db_engine, class_=AsyncSession,autocommit=False, autoflush=False, expire_on_commit=False)

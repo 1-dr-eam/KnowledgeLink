@@ -13,6 +13,7 @@ class UserProfileBehavior(Base):
     age = Column(Integer)
     user_categories = Column(String) # 是分号分隔的字符串
     user_keywords = Column(String)   # 是分号分隔的字符串
+    create_time=Column(DateTime)
     # 统计信息
     user_click_last3m = Column(Integer)
     user_cart_last3m = Column(Integer)
@@ -49,6 +50,7 @@ class UserItemInteraction(Base):
     user_id = Column(BigInteger, index=True)
     item_id = Column(BigInteger, index=True)
     rating = Column(Integer)
+    create_time = Column(DateTime)
     hour = Column(Integer)
     is_weekend = Column(Boolean)
     is_holiday = Column(Boolean)
