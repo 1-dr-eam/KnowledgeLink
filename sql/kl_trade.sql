@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS `user_item_interaction` (
    `user_id` BIGINT NOT NULL COMMENT '用户ID',
    `item_id` BIGINT NOT NULL COMMENT '商品/书籍ID',
    `rating` INT NOT NULL DEFAULT 1 COMMENT '兴趣等级，等于后面四项的和',
-   `datetime` DATETIME NOT NULL COMMENT '交互时间',
+   `create_time` DATETIME NOT NULL COMMENT '交互时间',
    `hour` TINYINT NOT NULL COMMENT '小时(0-23)',
    `is_weekend` BOOLEAN NOT NULL DEFAULT 0 COMMENT '是否周末:0否1是',
    `is_holiday` BOOLEAN NOT NULL DEFAULT 0 COMMENT '是否节假日:0否1是',
