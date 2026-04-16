@@ -230,4 +230,5 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="10.244.193.207", port=8000)
+    # 在这里替换为你自己的IP地址和端口号
+    uvicorn.run(app, host="your_host", port=8000)

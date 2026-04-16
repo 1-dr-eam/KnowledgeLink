@@ -2,8 +2,10 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 # ===== 数据库连接 URL =====
-BOOK_INTERACTION_DATABASE_URL = "mysql+aiomysql://kl_database:123456@175.27.129.187/kl_trade"
-USER_DATABASE_URL = "mysql+aiomysql://kl_database:123456@175.27.129.187/kl_user"
+# 在这里替换为你自己的用户名、密码、数据库服务器IP
+BOOK_INTERACTION_DATABASE_URL = "mysql+aiomysql://username:password@database_ip/kl_trade"
+USER_DATABASE_URL = "mysql+aiomysql://username:password@database_ip/kl_user"
+
 # ===== 创建异步引擎 =====
 # 为三个数据库分别创建引擎
 book_and_interaction_db_engine = create_async_engine(BOOK_INTERACTION_DATABASE_URL,
