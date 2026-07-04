@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
  * @date 2026/03/19
  */
 @Data
-@TableName("order")
+@TableName("`order`")
 public class Order {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;

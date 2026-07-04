@@ -12,5 +12,5 @@ import java.util.List;
  */
 @Data
 public class RecommendIdsResponse {
-    private List<Object> recommendIds;
+    private List<Object> recommendations;
 }

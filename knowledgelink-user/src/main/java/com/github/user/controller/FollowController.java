@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -45,8 +46,10 @@ public class FollowController {
     }
 
     @GetMapping("/isFollow")
-    public Result isFollow(@RequestBody IdRequest idRequest) {
+    public Result isFollow(@RequestParam("id") Long id) {
+        IdRequest idRequest = new IdRequest();
+        idRequest.setId(id);
         return followService.isFollow(idRequest);
     }
-
 }
+

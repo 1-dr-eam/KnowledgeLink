@@ -13,8 +13,8 @@ import java.time.LocalDateTime;
  */
 @Data
 public class ForumDetailVO {
-    private Long id;
-    private Long userId;
+    private String id;
+    private String userId;
     private String userName;
     private String userAvatar;
     // 是否是自己的帖子（若是则followStatus为null）

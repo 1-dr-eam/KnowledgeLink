@@ -6,11 +6,12 @@ import java.time.LocalDateTime;
 
 @Data
 public class ChatListVO {
-    private Long id;
+    private String id;
     private String avatar;
     private String name;
     private Boolean status;
     private String lastMessage;
     private Boolean read;
+    private Integer unreadCount;
     private LocalDateTime sendTime;
 }

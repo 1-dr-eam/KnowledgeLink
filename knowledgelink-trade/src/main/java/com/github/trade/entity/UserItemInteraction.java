@@ -25,8 +25,8 @@ public class UserItemInteraction {
     private Long itemId;
     // 等于click + cart + forward + buy
     private Integer rating;
-    @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime dateTime;
+    @TableField(value = "create_time", fill = FieldFill.INSERT)
+    private LocalDateTime createTime;
     private Integer hour;
     @TableField("is_weekend")
     private Boolean weekend;

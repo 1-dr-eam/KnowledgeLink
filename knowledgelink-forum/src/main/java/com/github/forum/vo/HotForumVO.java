@@ -10,6 +10,7 @@ import lombok.Data;
  */
 @Data
 public class HotForumVO {
-    private Long id;
+    private String id;
     private String title;
+    private Long hot;
 }

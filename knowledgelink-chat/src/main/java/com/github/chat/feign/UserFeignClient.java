@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-@FeignClient(name = "knowledgelink-user")
+@FeignClient(name = "knowledgelink-user", url = "http://localhost:8080")
 public interface UserFeignClient {
     @GetMapping("/user/getFriendList")
     Result getFriendIds();

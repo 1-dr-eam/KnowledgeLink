@@ -10,30 +10,28 @@ import java.time.LocalDateTime;
 @Component
 public class UserItemInteractionRecordUtil {
     private final UserItemInteractionMapper userItemInteractionMapper;
-    private final ItemInteractionBackfillUtil itemInteractionBackfillUtil;
 
-    public UserItemInteractionRecordUtil(UserItemInteractionMapper userItemInteractionMapper, ItemInteractionBackfillUtil itemInteractionBackfillUtil) {
+    public UserItemInteractionRecordUtil(UserItemInteractionMapper userItemInteractionMapper) {
         this.userItemInteractionMapper = userItemInteractionMapper;
-        this.itemInteractionBackfillUtil = itemInteractionBackfillUtil;
     }
 
     public void recordView(Long userId, Long itemId) {
-        recordInteraction(userId, itemId, true, false, false, false);
+        recordInteraction(userId, itemId, false, false, false);
     }
 
     public void recordCart(Long userId, Long itemId) {
-        recordInteraction(userId, itemId, false, true, false, false);
+        recordInteraction(userId, itemId, true, false, false);
     }
 
     public void recordBuy(Long userId, Long itemId) {
-        recordInteraction(userId, itemId, false, false, false, true);
+        recordInteraction(userId, itemId, false, false, true);
     }
 
     public void recordForward(Long userId, Long itemId) {
-        recordInteraction(userId, itemId, false, false, true, false);
+        recordInteraction(userId, itemId, false, true, false);
     }
 
-    private void recordInteraction(Long userId, Long itemId, boolean click, boolean cart, boolean forward, boolean buy) {
+    private void recordInteraction(Long userId, Long itemId, boolean cart, boolean forward, boolean buy) {
         if (userId == null || itemId == null) {
             return;
         }
@@ -41,18 +39,15 @@ public class UserItemInteractionRecordUtil {
         UserItemInteraction interaction = new UserItemInteraction();
         interaction.setUserId(userId);
         interaction.setItemId(itemId);
-        interaction.setDateTime(now);
+        interaction.setCreateTime(now);
         interaction.setHour(now.getHour());
         interaction.setWeekend(now.getDayOfWeek() == DayOfWeek.SATURDAY || now.getDayOfWeek() == DayOfWeek.SUNDAY);
         interaction.setHoliday(Boolean.FALSE);
-        interaction.setClick(click);
+        interaction.setClick(true);
         interaction.setCart(cart);
         interaction.setForward(forward);
         interaction.setBuy(buy);
-        int rating = 0;
-        if (click) {
-            rating += 1;
-        }
+        int rating = 1;
         if (cart) {
             rating += 1;
         }
@@ -64,6 +59,5 @@ public class UserItemInteractionRecordUtil {
         }
         interaction.setRating(rating);
         userItemInteractionMapper.insert(interaction);
-        itemInteractionBackfillUtil.backfillSingleItem(itemId);
     }
 }

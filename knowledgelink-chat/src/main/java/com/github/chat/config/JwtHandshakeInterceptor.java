@@ -6,10 +6,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import static com.github.common.constant.SecurityConstant.JWT_CLAIM_USER_ID;
@@ -40,6 +43,9 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             return false;
         }
         String auth = servletServerHttpRequest.getServletRequest().getHeader("Authorization");
+        if (!StringUtils.hasText(auth)) {
+            auth = extractTokenFromQuery(servletServerHttpRequest.getServletRequest().getQueryString());
+        }
         if (auth == null || auth.isBlank()) {
             return false;
         }
@@ -70,5 +76,20 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
      */
     @Override
     public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Exception exception) {
+    }
+
+    private String extractTokenFromQuery(String queryString) {
+        if (!StringUtils.hasText(queryString)) {
+            return null;
+        }
+        String[] parts = queryString.split("&");
+        for (String part : parts) {
+            String[] kv = part.split("=", 2);
+            if (kv.length == 2 && "token".equals(kv[0])) {
+                String decoded = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+                return "Bearer " + decoded;
+            }
+        }
+        return null;
     }
 }

@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Component
 public class JwtTokenUtil {
-    public static final long TOKEN_EXPIRE_MINUTES = 30L;
+    public static final long TOKEN_EXPIRE_MINUTES = 180L;
 
     private final JwtProperties jwtProperties;
     private final StringRedisTemplate stringRedisTemplate;

@@ -17,7 +17,6 @@ import com.github.trade.dto.BookSearchDTO;
 import com.github.trade.entity.Book;
 import com.github.trade.entity.BookEsDocument;
 import com.github.trade.mapper.BookMapper;
-import com.github.trade.util.BookConversionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -37,7 +36,6 @@ import java.util.List;
 public class BookEsService {
     private final ElasticsearchClient elasticsearchClient;
     private final BookMapper bookMapper;
-    private final BookConversionUtil bookConversionUtil;
 
     @Value("${trade.es.book-index:book_info}")
     private String bookIndex;
@@ -131,7 +129,7 @@ public class BookEsService {
             BookEsDocument source = hit.source();
             if (source != null) {
                 Book book = BeanUtil.copyProperties(source, Book.class);
-                BookDTO bookDTO = bookConversionUtil.toBookDTO(book);
+                BookDTO bookDTO = BeanUtil.copyProperties(book, BookDTO.class);
                 result.add(bookDTO);
             }
         });

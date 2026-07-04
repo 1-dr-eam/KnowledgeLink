@@ -1,18 +1,24 @@
 package com.github.chat.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
+/**
+ * 聊天用户
+ *
+ * @author ning
+ * @date 2026/03/31
+ */
 @Data
 @TableName("user")
 public class ChatUser {
-    @TableId(type = IdType.AUTO)
+    @TableId
     private Long id;
-    private String phone;
+    @TableField("user_name")
     private String username;
-    private String major;
-    private String grade;
+    private String phone;
     private String avatar;
+    private Integer status;
 }

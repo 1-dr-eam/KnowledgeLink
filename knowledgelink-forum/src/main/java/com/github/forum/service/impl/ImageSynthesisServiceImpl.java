@@ -17,16 +17,23 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 图像合成服务实施
+ * ImageSynthesisServiceImpl 服务实现类
  *
  * @author ning
- * @date 2026/03/12
+ * @date 2026/03/24
  */
+
 @Service
 public class ImageSynthesisServiceImpl implements IImageSynthesisService {
     @Autowired
     private DashScopeImageProperties dashScopeImageProperties;
 
+    /**
+     * 执行generateImage逻辑
+     *
+     * @param prompt prompt参数
+     * @return 处理结果
+     */
     @Override
     public Result generateImage(String prompt) {
         if (prompt == null || prompt.isBlank()) {
@@ -61,6 +68,11 @@ public class ImageSynthesisServiceImpl implements IImageSynthesisService {
         }
     }
 
+    /**
+     * 执行resolveModel逻辑
+     *
+     * @return 处理结果
+     */
     private String resolveModel() {
         if (dashScopeImageProperties.getModel() == null || dashScopeImageProperties.getModel().isBlank()) {
             return "qwen-image-plus";
@@ -68,6 +80,11 @@ public class ImageSynthesisServiceImpl implements IImageSynthesisService {
         return dashScopeImageProperties.getModel().trim();
     }
 
+    /**
+     * 执行resolveN逻辑
+     *
+     * @return 处理结果
+     */
     private Integer resolveN() {
         if (dashScopeImageProperties.getN() == null || dashScopeImageProperties.getN() < 1) {
             return 1;
@@ -75,6 +92,11 @@ public class ImageSynthesisServiceImpl implements IImageSynthesisService {
         return dashScopeImageProperties.getN();
     }
 
+    /**
+     * 执行resolveSize逻辑
+     *
+     * @return 处理结果
+     */
     private String resolveSize() {
         if (dashScopeImageProperties.getSize() == null || dashScopeImageProperties.getSize().isBlank()) {
             return "1664*928";
@@ -82,6 +104,11 @@ public class ImageSynthesisServiceImpl implements IImageSynthesisService {
         return dashScopeImageProperties.getSize().trim();
     }
 
+    /**
+     * 执行resolveBaseUrl逻辑
+     *
+     * @return 处理结果
+     */
     private String resolveBaseUrl() {
         String raw = dashScopeImageProperties.getBaseUrl();
         if (raw == null || raw.isBlank()) {

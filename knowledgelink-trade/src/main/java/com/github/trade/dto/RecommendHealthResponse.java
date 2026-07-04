@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
  */
 @Data
 public class RecommendHealthResponse {
-    private String health;
+    private String status;
     private String reason;
     private LocalDateTime timestamp;
 }

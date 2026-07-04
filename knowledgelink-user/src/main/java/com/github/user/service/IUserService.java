@@ -24,4 +24,6 @@ public interface IUserService extends IService<User> {
     Result getUserInfoById(Long id);
     Result getUserFollowStatById(Long id);
     Result getUsersByIds(List<Long> ids);
+    Result getUserPreferenceBehavior(Long userId);
+    Result getUserDashboard();
 }

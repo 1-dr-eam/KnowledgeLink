@@ -1,9 +1,10 @@
 package com.github.trade.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * 购物车vo
@@ -13,8 +14,10 @@ import java.util.List;
  */
 @Data
 public class CartVO {
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
     private Long userId;
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long bookId;
     private Integer count;
     private String bookName;
@@ -25,7 +28,7 @@ public class CartVO {
     private String bookType;
     private String bookItemCategories;
     private String bookItemKeywords;
-    private List<String> bookImage;
+    private String bookImage;
     private Integer bookStatus;
     private Boolean inventory;
     private LocalDateTime createTime;

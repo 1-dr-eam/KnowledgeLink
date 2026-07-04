@@ -18,7 +18,7 @@ public interface IChatMessageService {
 
     void saveMessage(ChatMessage chatMessage);
 
-    List<MessageListVO> getHistoryMessages(Long targetUserId);
+    List<MessageListVO> getHistoryMessages(String targetUserId);
 
     String uploadImage(MultipartFile file);
 }

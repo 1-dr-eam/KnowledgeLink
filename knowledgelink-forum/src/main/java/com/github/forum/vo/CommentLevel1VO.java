@@ -10,8 +10,8 @@ import lombok.Data;
  */
 @Data
 public class CommentLevel1VO {
-    private Long id;
-    private Long userId;
+    private String id;
+    private String userId;
     private String username;
     private String avatar;
     private String content;

@@ -10,7 +10,7 @@ import lombok.Data;
  */
 @Data
 public class OrderAddDTO {
-    private Long bookId;
+    private String bookId;
     private Integer count;
     private String address;
 }

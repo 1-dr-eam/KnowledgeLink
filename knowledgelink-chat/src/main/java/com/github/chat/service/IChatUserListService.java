@@ -2,6 +2,7 @@ package com.github.chat.service;
 
 import com.github.chat.entity.ChatUser;
 import com.github.chat.vo.ChatListVO;
+import com.github.chat.vo.ChatUserSimpleVO;
 
 import java.util.List;
 
@@ -10,9 +11,9 @@ public interface IChatUserListService {
 
     List<ChatListVO> getRecentChatList();
 
-    List<ChatUser> searchUsersByKeyword(String keyword);
+    List<ChatUserSimpleVO> searchUsersByKeyword(String keyword);
 
-    List<ChatUser> getOnlineUsers();
+    List<ChatUserSimpleVO> getOnlineUsers();
 
     void markUserOnline(Long userId);
 

@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: knowledgelink-chat
+  cloud:
+    nacos:
+      server-addr: 175.27.129.187:8848
+      discovery:
+        enabled: false
+      config:
+        enabled: false
+  config:
+    import: ""

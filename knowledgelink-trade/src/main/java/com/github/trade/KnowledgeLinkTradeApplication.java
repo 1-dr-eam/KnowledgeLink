@@ -3,6 +3,7 @@ package com.github.trade;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 
 /**
  * @author ning
@@ -10,6 +11,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication(scanBasePackages = {"com.github.trade", "com.github.common"})
 @MapperScan("com.github.trade.mapper")
+@EnableFeignClients(basePackages = "com.github.trade.feign")
 public class KnowledgeLinkTradeApplication {
     public static void main(String[] args) {
         SpringApplication.run(KnowledgeLinkTradeApplication.class, args);

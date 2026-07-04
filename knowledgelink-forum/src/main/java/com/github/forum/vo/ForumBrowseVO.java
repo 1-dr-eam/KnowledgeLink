@@ -13,8 +13,8 @@ import java.time.LocalDateTime;
  */
 @Data
 public class ForumBrowseVO {
-    private Long id;
-    private Long userId;
+    private String id;
+    private String userId;
     private String userName;
     private String userAvatar;
     private String title;

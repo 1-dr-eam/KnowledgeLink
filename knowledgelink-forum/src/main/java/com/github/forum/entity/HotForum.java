@@ -19,6 +19,7 @@ import lombok.Data;
 public class HotForum {
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long forumId;
     private String title;
     private Integer score;
 }

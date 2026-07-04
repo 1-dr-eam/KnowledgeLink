@@ -10,7 +10,9 @@ import lombok.Data;
  */
 @Data
 public class ExcellentCreatorVO {
-    private Long id;
+    private String id;
     private String avatar;
     private String name;
+    private Long score;
+    private String intro;
 }

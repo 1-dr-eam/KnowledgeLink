@@ -1,88 +1,85 @@
 package com.github.forum.controller;
 
 import com.github.common.dto.Result;
+import com.github.forum.dto.ForumUpsertDTO;
+import com.github.forum.dto.IdRequest;
+import com.github.forum.dto.SearchDTO;
 import com.github.forum.service.IForumPostService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+/**
+ * 帖子控制器
+ *
+ * @author ning
+ * @date 2026/03/24
+ */
 
 @RestController
+@RequestMapping("/post")
 public class PostController {
     @Autowired
     private IForumPostService forumPostService;
 
-    @RequestMapping("/insertPost")
-    public Result insertPost(String title, String summary, String content, String cover_avatar, String label, String type, String visible_range, String subject, String sub_classify) {
-        return forumPostService.insertPost(title, summary, content, cover_avatar, label, type, visible_range, subject, sub_classify);
+    @PostMapping("/add")
+    public Result addPost(@RequestBody ForumUpsertDTO forumUpsertDTO) {
+        return forumPostService.addPost(forumUpsertDTO);
     }
 
-    @RequestMapping("/deletePost")
-    public Result deletePost(Long id) {
-        return forumPostService.deletePost(id);
+    @PutMapping("/update")
+    public Result updatePost(@RequestParam("id") String id, @RequestBody ForumUpsertDTO forumUpsertDTO) {
+        IdRequest idRequest = new IdRequest();
+        idRequest.setId(id);
+        return forumPostService.updatePost(idRequest, forumUpsertDTO);
     }
 
-    @RequestMapping("/updatePost")
-    public Result updatePost(Long id, String title, String summary, String content, String cover_avatar, String labels, String type, String visible_range, String subject, String sub_classify) {
-        return forumPostService.updatePost(id, title, summary, content, cover_avatar, labels, type, visible_range, subject, sub_classify);
+    @DeleteMapping("/delete")
+    public Result deletePost(@RequestBody IdRequest idRequest) {
+        return forumPostService.deletePost(idRequest);
     }
 
-    @RequestMapping("/getPostsByUserId")
-    public Result getPostsByUserId() {
-        return forumPostService.getPostsByUserId();
+    @PostMapping("/getById")
+    public Result getPostById(@RequestBody IdRequest idRequest) {
+        return forumPostService.getPostById(idRequest);
     }
 
-    @RequestMapping("/getUserPostsById")
-    public Result getUserPostsById(Long userId, String collation, String searchKey) {
-        return forumPostService.getUserPostsById(userId, collation, searchKey);
+    @GetMapping("/getByUserId")
+    public Result getPostsByUserId(@RequestParam("userId") String userId) {
+        return forumPostService.getPostsByUserId(userId);
     }
 
-    @RequestMapping("/getAllPosts")
-    public Result getAllPosts(String keyword, String collation, String label, String classify) {
-        return forumPostService.getAllPosts(keyword, collation, label, classify);
+    @GetMapping("/collects")
+    public Result getMyCollectedPosts() {
+        return forumPostService.getMyCollectedPosts();
     }
 
-    @RequestMapping("/getLoginUserPosts")
-    public Result getLoginUserPosts(String collation) {
-        return forumPostService.getLoginUserPosts(collation);
+    @PostMapping("/detail")
+    public Result getPostDetailById(@RequestBody IdRequest idRequest) {
+        return forumPostService.getPostDetailById(idRequest);
     }
 
-    @RequestMapping("/getLoginUserCollectPosts")
-    public Result getLoginUserCollectPosts() {
-        return forumPostService.getLoginUserCollectPosts();
+    @PostMapping("/search")
+    public Result searchPosts(@RequestBody SearchDTO searchDTO) {
+        return forumPostService.searchPosts(searchDTO);
     }
 
-    @RequestMapping("/getPostInfoById")
-    public Result getPostInfoById(Long post_id) {
-        return forumPostService.getPostInfoById(post_id);
+    @GetMapping("/recommended")
+    public Result getRecommendedPosts(@RequestParam(value = "limit", required = false, defaultValue = "10") Integer limit) {
+        return forumPostService.getRecommendedPosts(limit);
     }
 
-    @RequestMapping("/incPageViewsById")
-    public Result incPageViewsById(Long id) {
-        return forumPostService.incPageViewsById(id);
+    @GetMapping("/hot")
+    public Result getHotPosts(@RequestParam(value = "limit", required = false, defaultValue = "10") Integer limit) {
+        return forumPostService.getHotPosts(limit);
     }
 
-    @RequestMapping("/getPostLabelById")
-    public Result getPostLabelById(Long id) {
-        return forumPostService.getPostLabelById(id);
+    @GetMapping("/hotTopics")
+    public Result getHotTopics(@RequestParam(value = "limit", required = false, defaultValue = "12") Integer limit) {
+        return forumPostService.getHotTopics(limit);
     }
 
-    @RequestMapping("/getPopularTopic")
-    public Result getPopularTopic() {
-        return forumPostService.getPopularTopic();
-    }
-
-    @RequestMapping("/getPostLabels")
-    public Result getPostLabels() {
-        return forumPostService.getPostLabels();
-    }
-
-    @RequestMapping("/getPostClassifies")
-    public Result getPostClassifies() {
-        return forumPostService.getPostClassifies();
-    }
-
-    @RequestMapping("/getTopicSimilarPosts")
-    public Result getTopicSimilarPosts(Long id, String subject, String sub_classify) {
-        return forumPostService.getTopicSimilarPosts(id, subject, sub_classify);
+    @GetMapping("/excellentCreators")
+    public Result getExcellentCreators(@RequestParam(value = "limit", required = false, defaultValue = "10") Integer limit) {
+        return forumPostService.getExcellentCreators(limit);
     }
 }

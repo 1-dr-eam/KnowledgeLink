@@ -10,7 +10,7 @@ import lombok.Data;
  */
 @Data
 public class ChatMessageSendDTO {
-    private Long toUserId;
+    private String toUserId;
     private String message;
     private String type;
 }

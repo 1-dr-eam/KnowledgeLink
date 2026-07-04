@@ -45,10 +45,11 @@ public class weChatPaymentUtil {
      * @return 包含订单金额、支付链接与交易号
      */
     public Result createPayOrder(IdRequest idRequest) {
-        if (idRequest == null || idRequest.getId() == null) {
+        Long orderId = idRequest == null ? null : TradeIdUtil.parseId(idRequest.getId());
+        if (orderId == null) {
             return Result.error("订单参数错误");
         }
-        Order order = consumerOrderMapper.selectById(idRequest.getId());
+        Order order = consumerOrderMapper.selectById(orderId);
         if (order == null || !UserHolder.getUser().getId().equals(order.getUserId())) {
             return Result.error("订单不存在");
         }
@@ -71,10 +72,11 @@ public class weChatPaymentUtil {
      * @return 包含二维码Base64与支付链接
      */
     public Result generateQrCode(IdRequest idRequest) {
-        if (idRequest == null || idRequest.getId() == null) {
+        Long orderId = idRequest == null ? null : TradeIdUtil.parseId(idRequest.getId());
+        if (orderId == null) {
             return Result.error("订单参数错误");
         }
-        Order order = consumerOrderMapper.selectById(idRequest.getId());
+        Order order = consumerOrderMapper.selectById(orderId);
         if (order == null || !UserHolder.getUser().getId().equals(order.getUserId())) {
             return Result.error("订单不存在");
         }
@@ -98,10 +100,11 @@ public class weChatPaymentUtil {
      * @return 处理结果
      */
     public Result mockPay(IdRequest idRequest) {
-        if (idRequest == null || idRequest.getId() == null) {
+        Long orderId = idRequest == null ? null : TradeIdUtil.parseId(idRequest.getId());
+        if (orderId == null) {
             return Result.error("订单参数错误");
         }
-        Order order = consumerOrderMapper.selectById(idRequest.getId());
+        Order order = consumerOrderMapper.selectById(orderId);
         if (order == null || !UserHolder.getUser().getId().equals(order.getUserId())) {
             return Result.error("订单不存在");
         }

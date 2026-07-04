@@ -7,11 +7,45 @@ server:
 spring:
   application:
     name: knowledgelink-forum
+  cloud:
+    nacos:
+      server-addr: 175.27.129.187:8848
+      discovery:
+        enabled: false
+      config:
+        enabled: false
+  elasticsearch:
+    uris: http://101.42.227.93:9200
+    username: elastic
+    password: 133017
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/knowledge_link?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://101.42.227.93:3306/kl_forum?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
-    password: 123456
+    password: 133017
+    hikari:
+      max-lifetime: 540000
+      idle-timeout: 300000
+      keepalive-time: 120000
+      connection-timeout: 30000
+      validation-timeout: 5000
+      minimum-idle: 5
+      maximum-pool-size: 20
+  data:
+    redis:
+      host: 101.42.227.93
+      port: 6379
+      password: 133017
+      database: 1
+      timeout: 3000ms
+      connect-timeout: 3000ms
+      lettuce:
+        pool:
+          min-idle: 8
+          max-idle: 8
+          max-active: 20
+          max-wait: 2000ms
+          time-between-eviction-runs: 30s
   servlet:
     # 文件上传配置信息
     multipart:
@@ -32,7 +66,7 @@ dashscope:
     model: qwen-image-2.0-pro
     n: 1
     size: 1664*928
-    negativePrompt:
+    negativePrompt: ""
     promptExtend: true
     watermark: false
 
@@ -59,5 +93,27 @@ tencent:
     region: ap-nanjing
     bucket-name: ningning-1402906498
     url: https://ningning-1402906498.cos.ap-nanjing.myqcloud.com
+
+forum:
+  es:
+    post-index: forum_post
+  recommend:
+    weight:
+      like: 2.0
+      collect: 3.0
+      page-view: 0.10
+      comment: 1.20
+      hot-like: 1.50
+      hot-collect: 2.00
+      behavior-score: 0.55
+      hot-score: 0.35
+      fresh-score: 0.10
+      fresh-decay-hours: 72.0
+
+remote:
+  user-base-url: http://175.27.129.187:8086/user
+
+jwt:
+  secret: knowledge-link-local-jwt-secret-2026-very-long-key
 
 

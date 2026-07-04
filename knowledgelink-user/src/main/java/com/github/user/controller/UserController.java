@@ -27,7 +27,7 @@ public class UserController {
         return userService.registerUser(user);
     }
 
-    @GetMapping("/login")
+    @PostMapping("/login")
     public Result loginUser(@RequestBody LoginDTO loginDTO) {
         return userService.loginUser(loginDTO);
     }
@@ -65,5 +65,15 @@ public class UserController {
     @GetMapping("/batch")
     public Result getUsersByIds(@RequestParam("ids") List<Long> ids) {
         return userService.getUsersByIds(ids);
+    }
+
+    @GetMapping("/profile/behavior")
+    public Result getUserPreferenceBehavior(@RequestParam(value = "userId", required = false) Long userId) {
+        return userService.getUserPreferenceBehavior(userId);
+    }
+
+    @GetMapping("/dashboard")
+    public Result getUserDashboard() {
+        return userService.getUserDashboard();
     }
 }

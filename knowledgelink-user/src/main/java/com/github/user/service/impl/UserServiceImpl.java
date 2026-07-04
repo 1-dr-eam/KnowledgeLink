@@ -1,6 +1,8 @@
 package com.github.user.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -14,12 +16,22 @@ import com.github.user.dto.LoginDTO;
 import com.github.user.dto.UserInfoDTO;
 import com.github.user.entity.User;
 import com.github.user.entity.UserFollow;
+import com.github.user.entity.UserProfileBehavior;
 import com.github.user.mapper.UserFollowMapper;
 import com.github.user.mapper.UserMapper;
+import com.github.user.mapper.UserProfileBehaviorMapper;
 import com.github.user.service.IUserService;
+import com.github.user.vo.UserDashboardVO;
 import com.github.user.vo.UserFollowStatVO;
+import com.github.user.vo.UserPreferenceBehaviorVO;
 import com.github.user.vo.UserProfileVO;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -31,6 +43,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -44,11 +57,25 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     private final StringRedisTemplate stringRedisTemplate;
     private final JwtTokenUtil jwtTokenUtil;
     private final UserFollowMapper userFollowMapper;
+    private final UserProfileBehaviorMapper userProfileBehaviorMapper;
+    private final RestTemplate restTemplate;
+    private final String tradeBaseUrl;
+    private final String forumBaseUrl;
 
-    public UserServiceImpl(StringRedisTemplate stringRedisTemplate, JwtTokenUtil jwtTokenUtil, UserFollowMapper userFollowMapper) {
+    public UserServiceImpl(StringRedisTemplate stringRedisTemplate,
+                           JwtTokenUtil jwtTokenUtil,
+                           UserFollowMapper userFollowMapper,
+                           UserProfileBehaviorMapper userProfileBehaviorMapper,
+                           RestTemplate restTemplate,
+                           @Value("${remote.trade-base-url:http://127.0.0.1:8081/trade}") String tradeBaseUrl,
+                           @Value("${remote.forum-base-url:http://127.0.0.1:8085/forum}") String forumBaseUrl) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.jwtTokenUtil = jwtTokenUtil;
         this.userFollowMapper = userFollowMapper;
+        this.userProfileBehaviorMapper = userProfileBehaviorMapper;
+        this.restTemplate = restTemplate;
+        this.tradeBaseUrl = tradeBaseUrl;
+        this.forumBaseUrl = forumBaseUrl;
     }
 
     /**
@@ -240,38 +267,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         if (id == null) {
             return Result.error("用户ID不能为空");
         }
-        List<UserFollow> userFollowList = userFollowMapper.selectList(new LambdaQueryWrapper<UserFollow>()
-                .eq(UserFollow::getFirstUserId, id)
-                .or()
-                .eq(UserFollow::getSecondUserId, id));
-        int followCount = 0;
-        int followersCount = 0;
-        for (UserFollow userFollow : userFollowList) {
-            if (userFollow.getStatus() == UserFollow.Status.EACH_FOLLOW) {
-                followCount++;
-                followersCount++;
-                continue;
-            }
-            if (userFollow.getStatus() == UserFollow.Status.FIRST_FOLLOW) {
-                if (id.equals(userFollow.getFirstUserId())) {
-                    followCount++;
-                } else {
-                    followersCount++;
-                }
-                continue;
-            }
-            if (userFollow.getStatus() == UserFollow.Status.SECOND_FOLLOW) {
-                if (id.equals(userFollow.getSecondUserId())) {
-                    followCount++;
-                } else {
-                    followersCount++;
-                }
-            }
-        }
-        UserFollowStatVO userFollowStatVO = new UserFollowStatVO();
-        userFollowStatVO.setFollowCount(followCount);
-        userFollowStatVO.setFollowersCount(followersCount);
-        return Result.success(userFollowStatVO);
+        return Result.success(buildUserFollowStat(id));
     }
 
     @Override
@@ -295,6 +291,60 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             return userDTO;
         }).toList();
         return Result.success(userDTOList);
+    }
+
+    @Override
+    public Result getUserPreferenceBehavior(Long userId) {
+        Long targetUserId = userId;
+        if (targetUserId == null) {
+            if (UserHolder.getUser() == null || UserHolder.getUser().getId() == null) {
+                return Result.error("用户未登录");
+            }
+            targetUserId = UserHolder.getUser().getId();
+        }
+        UserProfileBehavior behavior = userProfileBehaviorMapper.selectOne(new LambdaQueryWrapper<UserProfileBehavior>()
+                .eq(UserProfileBehavior::getUserId, targetUserId)
+                .last("limit 1"));
+        if (behavior == null) {
+            return Result.success(new UserPreferenceBehaviorVO());
+        }
+        UserPreferenceBehaviorVO vo = BeanUtil.copyProperties(behavior, UserPreferenceBehaviorVO.class);
+        vo.setUserId(targetUserId);
+        return Result.success(vo);
+    }
+
+    @Override
+    public Result getUserDashboard() {
+        Long userId = UserHolder.getUser().getId();
+        UserDTO currentUser = getUserFromCache(userId);
+        if (currentUser == null) {
+            User user = baseMapper.selectById(userId);
+            if (user == null) {
+                return Result.error("用户不存在");
+            }
+            currentUser = BeanUtil.copyProperties(user, UserDTO.class);
+            cacheUserInfo(currentUser);
+        }
+        CompletableFuture<String> addressFuture = CompletableFuture.supplyAsync(() -> fetchDefaultShippingAddress());
+        CompletableFuture<int[]> forumFuture = CompletableFuture.supplyAsync(() -> fetchForumStats(userId));
+        CompletableFuture<UserFollowStatVO> followFuture = CompletableFuture.supplyAsync(() -> buildUserFollowStat(userId));
+        CompletableFuture<Integer> friendFuture = CompletableFuture.supplyAsync(() -> countFriend(userId));
+        CompletableFuture.allOf(addressFuture, forumFuture, followFuture, friendFuture).join();
+        UserDashboardVO userDashboardVO = new UserDashboardVO();
+        userDashboardVO.setUsername(currentUser.getUsername());
+        userDashboardVO.setAvatar(currentUser.getAvatar());
+        userDashboardVO.setGrade(currentUser.getGrade());
+        userDashboardVO.setMajor(currentUser.getMajor());
+        userDashboardVO.setShippingAddress(addressFuture.join());
+        int[] forumStats = forumFuture.join();
+        userDashboardVO.setPostPageViews(forumStats[0]);
+        userDashboardVO.setPostLikeCount(forumStats[1]);
+        userDashboardVO.setPostCollectCount(forumStats[2]);
+        UserFollowStatVO followStatVO = followFuture.join();
+        userDashboardVO.setFollowersCount(followStatVO.getFollowersCount());
+        userDashboardVO.setFollowCount(followStatVO.getFollowCount());
+        userDashboardVO.setFriendCount(friendFuture.join());
+        return Result.success(userDashboardVO);
     }
 
     /**
@@ -335,6 +385,146 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
      */
     private void deleteUserCache(Long userId) {
         stringRedisTemplate.delete(buildUserCacheKey(userId));
+    }
+
+    private UserFollowStatVO buildUserFollowStat(Long userId) {
+        List<UserFollow> userFollowList = listUserFollowRelations(userId);
+        int followCount = 0;
+        int followersCount = 0;
+        for (UserFollow userFollow : userFollowList) {
+            if (userFollow.getStatus() == UserFollow.Status.EACH_FOLLOW) {
+                followCount++;
+                followersCount++;
+                continue;
+            }
+            if (userFollow.getStatus() == UserFollow.Status.FIRST_FOLLOW) {
+                if (userId.equals(userFollow.getFirstUserId())) {
+                    followCount++;
+                } else {
+                    followersCount++;
+                }
+                continue;
+            }
+            if (userFollow.getStatus() == UserFollow.Status.SECOND_FOLLOW) {
+                if (userId.equals(userFollow.getSecondUserId())) {
+                    followCount++;
+                } else {
+                    followersCount++;
+                }
+            }
+        }
+        UserFollowStatVO userFollowStatVO = new UserFollowStatVO();
+        userFollowStatVO.setFollowCount(followCount);
+        userFollowStatVO.setFollowersCount(followersCount);
+        return userFollowStatVO;
+    }
+
+    private int countFriend(Long userId) {
+        List<UserFollow> userFollowList = listUserFollowRelations(userId);
+        int friendCount = 0;
+        for (UserFollow userFollow : userFollowList) {
+            if (userFollow.getStatus() == UserFollow.Status.EACH_FOLLOW) {
+                friendCount++;
+            }
+        }
+        return friendCount;
+    }
+
+    private List<UserFollow> listUserFollowRelations(Long userId) {
+        return userFollowMapper.selectList(new LambdaQueryWrapper<UserFollow>()
+                .eq(UserFollow::getFirstUserId, userId)
+                .or()
+                .eq(UserFollow::getSecondUserId, userId));
+    }
+
+    private String fetchDefaultShippingAddress() {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            String token = getAuthorizationToken();
+            if (token != null && !token.isBlank()) {
+                headers.set("Authorization", "Bearer " + token);
+            }
+            ResponseEntity<String> responseEntity = restTemplate.exchange(
+                    tradeBaseUrl + "/address/list",
+                    HttpMethod.GET,
+                    new HttpEntity<>(headers),
+                    String.class
+            );
+            if (responseEntity.getBody() == null) {
+                return "";
+            }
+            JSONObject resultObj = JSONUtil.parseObj(responseEntity.getBody());
+            if (resultObj.getInt("code", 0) != 1) {
+                return "";
+            }
+            JSONArray dataArray = resultObj.getJSONArray("data");
+            if (dataArray == null || dataArray.isEmpty()) {
+                return "";
+            }
+            JSONObject targetAddress = null;
+            for (Object item : dataArray) {
+                JSONObject addressObj = JSONUtil.parseObj(item);
+                if (Boolean.TRUE.equals(addressObj.getBool("isDefault"))) {
+                    targetAddress = addressObj;
+                    break;
+                }
+            }
+            if (targetAddress == null) {
+                targetAddress = JSONUtil.parseObj(dataArray.get(0));
+            }
+            return buildAddressText(targetAddress);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private int[] fetchForumStats(Long userId) {
+        int[] stats = new int[]{0, 0, 0};
+        try {
+            ResponseEntity<String> responseEntity = restTemplate.getForEntity(
+                    forumBaseUrl + "/post/getByUserId?userId=" + userId,
+                    String.class
+            );
+            if (responseEntity.getBody() == null) {
+                return stats;
+            }
+            JSONObject resultObj = JSONUtil.parseObj(responseEntity.getBody());
+            if (resultObj.getInt("code", 0) != 1) {
+                return stats;
+            }
+            JSONArray dataArray = resultObj.getJSONArray("data");
+            if (dataArray == null || dataArray.isEmpty()) {
+                return stats;
+            }
+            for (Object item : dataArray) {
+                JSONObject forumObj = JSONUtil.parseObj(item);
+                stats[0] += forumObj.getInt("pageViews", 0);
+                stats[1] += forumObj.getInt("likeCount", 0);
+                stats[2] += forumObj.getInt("collectCount", 0);
+            }
+            return stats;
+        } catch (Exception e) {
+            return stats;
+        }
+    }
+
+    private String buildAddressText(JSONObject addressObj) {
+        if (addressObj == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        appendAddressPart(builder, addressObj.getStr("province"));
+        appendAddressPart(builder, addressObj.getStr("city"));
+        appendAddressPart(builder, addressObj.getStr("district"));
+        appendAddressPart(builder, addressObj.getStr("detailAddress"));
+        return builder.toString();
+    }
+
+    private void appendAddressPart(StringBuilder builder, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        builder.append(value);
     }
 
     /**

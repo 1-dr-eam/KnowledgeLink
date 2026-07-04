@@ -1,33 +1,42 @@
 package com.github.forum.controller;
 
 import com.github.common.dto.Result;
-import com.github.forum.service.IForumCommentService;
+import com.github.forum.dto.ForumCommentDTO;
+import com.github.forum.dto.IdRequest;
+import com.github.forum.service.ICommentService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+/**
+ * 评论控制器
+ *
+ * @author ning
+ * @date 2026/03/24
+ */
 
 @RestController
+@RequestMapping("/comment")
 public class CommentController {
     @Autowired
-    private IForumCommentService forumCommentService;
+    private ICommentService commentService;
 
-    @RequestMapping("/insertComment")
-    public Result insertComment(String comment_type, Long comment_id, String reply_type, Long post_id, Long reply_comment_id, String content) {
-        return forumCommentService.insertComment(comment_type, comment_id, reply_type, post_id, reply_comment_id, content);
+    @PostMapping("/add")
+    public Result addComment(@RequestBody ForumCommentDTO forumCommentDTO) {
+        return commentService.addComment(forumCommentDTO);
     }
 
-    @RequestMapping("/getCommentsByPostId")
-    public Result getCommentsByPostId(Long post_id) {
-        return forumCommentService.getCommentsByPostId(post_id);
+    @DeleteMapping("/delete")
+    public Result deleteCommentById(@RequestBody IdRequest idRequest) {
+        return commentService.deleteCommentById(idRequest);
     }
 
-    @RequestMapping("/getRepliesByCommentId")
-    public Result getRepliesByCommentId(Long comment_id) {
-        return forumCommentService.getRepliesByCommentId(comment_id);
+    @PostMapping("/level1")
+    public Result getLevel1CommentsByForumId(@RequestBody IdRequest idRequest) {
+        return commentService.getLevel1CommentsByForumId(idRequest);
     }
 
-    @RequestMapping("/deleteCommentById")
-    public Result deleteCommentById(String comment_type, Long comment_id) {
-        return forumCommentService.deleteCommentById(comment_type, comment_id);
+    @PostMapping("/level2")
+    public Result getLevel2CommentsByRootCommentId(@RequestBody IdRequest idRequest) {
+        return commentService.getLevel2CommentsByRootCommentId(idRequest);
     }
 }

@@ -3,6 +3,7 @@ package com.github.trade.controller;
 
 import com.github.trade.dto.BookDTO;
 import com.github.common.dto.Result;
+import com.github.trade.dto.BatchIdRequest;
 import com.github.trade.dto.BookSearchDTO;
 import com.github.trade.service.IBookService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,9 +24,19 @@ public class BookController {
         return bookService.getRecommendedBooks();
     }
 
-    @GetMapping("/getBooksByConditions")
+    @PostMapping("/getBooksByConditions")
     public Result getBooksByConditions(@RequestBody BookSearchDTO bookSearchDTO) {
         return bookService.getBooksByConditions(bookSearchDTO);
+    }
+
+    @GetMapping("/getBookById")
+    public Result getBookById(@RequestParam("itemId") Long itemId) {
+        return bookService.getBookById(itemId);
+    }
+
+    @GetMapping("/getMyBooks")
+    public Result getMyBooks() {
+        return bookService.getMyBooks();
     }
 
     @PostMapping("/uploadBookInfo")
@@ -41,6 +52,11 @@ public class BookController {
     @DeleteMapping("/removeBookInfo")
     public Result removeBookInfo(@RequestParam("itemId") Long itemId) {
         return bookService.removeBookInfo(itemId);
+    }
+
+    @DeleteMapping("/removeBookInfoBatch")
+    public Result removeBookInfoBatch(@RequestBody BatchIdRequest batchIdRequest) {
+        return bookService.removeBookInfoBatch(batchIdRequest);
     }
 
     @PutMapping("/updateBookInfo")

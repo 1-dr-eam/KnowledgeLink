@@ -28,6 +28,8 @@ public class ChatMessage {
     private String message;
     @TableField("send_time")
     private LocalDateTime sendTime;
+    // `read` is a SQL keyword in MySQL, escape it to avoid generated SQL syntax errors.
+    @TableField("`read`")
     private Boolean read;
 
     public enum MessageType {

@@ -12,6 +12,7 @@ import com.github.trade.dto.IdRequest;
 import com.github.trade.entity.ShoppingCar;
 import com.github.trade.mapper.CartMapper;
 import com.github.trade.service.ICartService;
+import com.github.trade.util.TradeIdUtil;
 import com.github.trade.util.UserItemInteractionRecordUtil;
 import com.github.trade.vo.CartVO;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,10 +53,11 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
      */
     @Override
     public Result insertCartInfo(CartUpsertRequest cartUpsertRequest) {
-        if (cartUpsertRequest == null || cartUpsertRequest.getId() == null || cartUpsertRequest.getCount() == null || cartUpsertRequest.getCount() <= 0) {
+        Long bookId = cartUpsertRequest == null ? null : TradeIdUtil.parseId(cartUpsertRequest.getId());
+        if (bookId == null || cartUpsertRequest.getCount() == null || cartUpsertRequest.getCount() <= 0) {
             return Result.error("购物车参数错误");
         }
-        BookDTO bookDTO = bookServiceImpl.getBookInfoById(cartUpsertRequest.getId());
+        BookDTO bookDTO = bookServiceImpl.getBookInfoById(bookId);
         if (bookDTO == null) {
             return Result.error("商品信息不存在");
         }
@@ -66,7 +68,7 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
         ShoppingCar oldShoppingCar = cartMapper.selectOne(
                 new LambdaQueryWrapper<ShoppingCar>()
                         .eq(ShoppingCar::getUserId, userId)
-                        .eq(ShoppingCar::getBookId, cartUpsertRequest.getId())
+                        .eq(ShoppingCar::getBookId, bookId)
         );
         // 重复商品判断
         if (oldShoppingCar != null) {
@@ -83,7 +85,7 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
         }
         ShoppingCar shoppingCar = new ShoppingCar();
         shoppingCar.setUserId(userId);
-        shoppingCar.setBookId(cartUpsertRequest.getId());
+        shoppingCar.setBookId(bookId);
         shoppingCar.setCount(cartUpsertRequest.getCount());
         shoppingCar.setInventory(true);
         baseMapper.insert(shoppingCar);
@@ -94,11 +96,12 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
 
     @Override
     public Result addCartByStep(IdRequest idRequest) {
-        if (idRequest == null || idRequest.getId() == null) {
+        Long cartId = idRequest == null ? null : TradeIdUtil.parseId(idRequest.getId());
+        if (cartId == null) {
             return Result.error("购物车参数错误");
         }
         Long userId = UserHolder.getUser().getId();
-        ShoppingCar shoppingCar = getUserCartById(idRequest.getId(), userId);
+        ShoppingCar shoppingCar = getUserCartById(cartId, userId);
         if (shoppingCar == null) {
             return Result.error("购物车记录不存在");
         }
@@ -119,11 +122,12 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
 
     @Override
     public Result reduceCartByStep(IdRequest idRequest) {
-        if (idRequest == null || idRequest.getId() == null) {
+        Long cartId = idRequest == null ? null : TradeIdUtil.parseId(idRequest.getId());
+        if (cartId == null) {
             return Result.error("购物车参数错误");
         }
         Long userId = UserHolder.getUser().getId();
-        ShoppingCar shoppingCar = getUserCartById(idRequest.getId(), userId);
+        ShoppingCar shoppingCar = getUserCartById(cartId, userId);
         if (shoppingCar == null) {
             return Result.error("购物车记录不存在");
         }
@@ -143,11 +147,12 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
 
     @Override
     public Result updateCartByCount(CartUpsertRequest cartUpsertRequest) {
-        if (cartUpsertRequest == null || cartUpsertRequest.getId() == null || cartUpsertRequest.getCount() == null || cartUpsertRequest.getCount() <= 0) {
+        Long cartId = cartUpsertRequest == null ? null : TradeIdUtil.parseId(cartUpsertRequest.getId());
+        if (cartId == null || cartUpsertRequest.getCount() == null || cartUpsertRequest.getCount() <= 0) {
             return Result.error("购物车参数错误");
         }
         Long userId = UserHolder.getUser().getId();
-        ShoppingCar shoppingCar = getUserCartById(cartUpsertRequest.getId(), userId);
+        ShoppingCar shoppingCar = getUserCartById(cartId, userId);
         if (shoppingCar == null) {
             return Result.error("购物车记录不存在");
         }
@@ -206,11 +211,12 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
 
     @Override
     public Result deleteCartById(IdRequest idRequest) {
-        if (idRequest == null || idRequest.getId() == null) {
+        Long cartId = idRequest == null ? null : TradeIdUtil.parseId(idRequest.getId());
+        if (cartId == null) {
             return Result.error("购物车参数错误");
         }
         Long userId = UserHolder.getUser().getId();
-        ShoppingCar shoppingCar = getUserCartById(idRequest.getId(), userId);
+        ShoppingCar shoppingCar = getUserCartById(cartId, userId);
         if (shoppingCar == null) {
             return Result.error("购物车记录不存在");
         }
@@ -221,23 +227,24 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, ShoppingCar> implem
 
     @Override
     public Result deleteCartByBatch(BatchIdRequest batchIdRequest) {
-        if (batchIdRequest == null || batchIdRequest.getIds() == null || batchIdRequest.getIds().isEmpty()) {
+        List<Long> cartIdList = batchIdRequest == null ? new ArrayList<>() : TradeIdUtil.parseIds(batchIdRequest.getIds());
+        if (cartIdList.isEmpty()) {
             return Result.error("购物车参数错误");
         }
         Long userId = UserHolder.getUser().getId();
         List<ShoppingCar> cartList = cartMapper.selectList(
                 new LambdaQueryWrapper<ShoppingCar>()
                         .eq(ShoppingCar::getUserId, userId)
-                        .in(ShoppingCar::getId, batchIdRequest.getIds())
+                        .in(ShoppingCar::getId, cartIdList)
         );
         if (cartList.isEmpty()) {
             return Result.success();
         }
-        List<Long> cartIdList = cartList.stream().map(ShoppingCar::getId).toList();
+        List<Long> targetCartIdList = cartList.stream().map(ShoppingCar::getId).toList();
         baseMapper.delete(
                 new LambdaQueryWrapper<ShoppingCar>()
                         .eq(ShoppingCar::getUserId, userId)
-                        .in(ShoppingCar::getId, cartIdList)
+                        .in(ShoppingCar::getId, targetCartIdList)
         );
         String tokenKey = CART_KEY + userId;
         Object[] bookIdArray = cartList.stream().map(item -> String.valueOf(item.getBookId())).toArray();

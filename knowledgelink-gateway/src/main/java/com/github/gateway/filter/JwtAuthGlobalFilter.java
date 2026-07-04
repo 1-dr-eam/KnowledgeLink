@@ -69,7 +69,14 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         }
         String headerValue = exchange.getRequest().getHeaders().getFirst(gatewayAuthProperties.getHeaderName());
         if (headerValue == null || headerValue.isBlank()) {
-            return writeError(exchange.getResponse(), "令牌缺失");
+            // Browser WebSocket handshake cannot set custom Authorization header reliably,
+            // so allow token query parameter fallback for gateway auth.
+            String queryToken = exchange.getRequest().getQueryParams().getFirst("token");
+            if (queryToken != null && !queryToken.isBlank()) {
+                headerValue = gatewayAuthProperties.getTokenPrefix() + " " + queryToken;
+            } else {
+                return writeError(exchange.getResponse(), "令牌缺失");
+            }
         }
         String tokenPrefix = gatewayAuthProperties.getTokenPrefix();
         String token;
@@ -163,7 +170,17 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
             return JwtCheckResult.error("令牌解析失败");
         }
         String tokenId = claims.getId();
-        if (tokenId == null || tokenId.isBlank() || !jwtTokenUtil.isTokenSessionValid(tokenId)) {
+        if (tokenId == null || tokenId.isBlank()) {
+            return JwtCheckResult.error("令牌已过期");
+        }
+        boolean tokenSessionValid;
+        try {
+            tokenSessionValid = jwtTokenUtil.isTokenSessionValid(tokenId);
+        } catch (Exception e) {
+            // Redis抖动时降级为鉴权失败，避免网关直接返回500
+            return JwtCheckResult.error("鉴权服务暂时不可用");
+        }
+        if (!tokenSessionValid) {
             return JwtCheckResult.error("令牌已过期");
         }
         return JwtCheckResult.success(claims);

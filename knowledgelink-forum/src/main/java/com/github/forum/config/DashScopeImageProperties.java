@@ -6,11 +6,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * 仪表盘范围图像属性
+ * DashScopeImageProperties 配置类
  *
  * @author ning
- * @date 2026/03/12
+ * @date 2026/03/24
  */
+
 @Component
 @Getter
 @Setter

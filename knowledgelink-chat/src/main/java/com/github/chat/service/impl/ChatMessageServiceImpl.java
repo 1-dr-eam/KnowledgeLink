@@ -1,6 +1,7 @@
 package com.github.chat.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.github.chat.dto.ChatMessageSendDTO;
 import com.github.chat.entity.ChatMessage;
 import com.github.chat.mapper.ChatMessageMapper;
@@ -38,12 +39,16 @@ public class ChatMessageServiceImpl implements IChatMessageService {
     @Override
     public ChatMessage sendMessage(ChatMessageSendDTO sendDTO) {
         Long userId = UserHolder.getUser().getId();
+        Long targetUserId = parseLongId(sendDTO.getToUserId());
+        if (targetUserId == null) {
+            throw new IllegalArgumentException("目标用户ID非法");
+        }
         ChatMessage chatMessage = new ChatMessage();
-        chatMessage.setId(buildMessageId(userId, sendDTO.getToUserId()));
+        chatMessage.setId(buildMessageId(userId, targetUserId));
         chatMessage.setSenderId(userId);
-        chatMessage.setReceiverId(sendDTO.getToUserId());
+        chatMessage.setReceiverId(targetUserId);
         chatMessage.setMessage(sendDTO.getMessage());
-        chatMessage.setMessageType(ChatMessage.MessageType.TEXT);
+        chatMessage.setMessageType(resolveMessageType(sendDTO.getType()));
         chatMessage.setRead(Boolean.FALSE);
         chatMessage.setSendTime(LocalDateTime.now());
         saveMessage(chatMessage);
@@ -68,25 +73,39 @@ public class ChatMessageServiceImpl implements IChatMessageService {
     }
 
     @Override
-    public List<MessageListVO> getHistoryMessages(Long targetUserId) {
-        Long userId = UserHolder.getUser().getId();
-        String messagePrefix = idCompareUtil.idCompare(userId, targetUserId) + "_";
-        List<ChatMessage> records = chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
-                .likeRight(ChatMessage::getId, messagePrefix)
-                .orderByDesc(ChatMessage::getSendTime)
-                .last("limit " + HISTORY_LIMIT));
-        List<MessageListVO> history = new ArrayList<>();
-        for (int i = records.size() - 1; i >= 0; i--) {
-            ChatMessage record = records.get(i);
-            MessageListVO messageListVO = new MessageListVO();
-            messageListVO.setId(record.getId());
-            messageListVO.setMessage(record.getMessage());
-            messageListVO.setSendTime(record.getSendTime());
-            messageListVO.setType(record.getMessageType() == ChatMessage.MessageType.IMAGE ? MessageListVO.MessageType.IMAGE : MessageListVO.MessageType.TEXT);
-            messageListVO.setSender(userId.equals(record.getSenderId()) ? MessageListVO.Sender.ME : MessageListVO.Sender.OPPOSITE);
-            history.add(messageListVO);
+    public List<MessageListVO> getHistoryMessages(String targetUserId) {
+        try {
+            Long userId = UserHolder.getUser().getId();
+            Long targetId = parseLongId(targetUserId);
+            if (targetId == null) {
+                return new ArrayList<>();
+            }
+            // Mark opposite messages as read once current user opens the conversation.
+            chatMessageMapper.update(null, new LambdaUpdateWrapper<ChatMessage>()
+                    .eq(ChatMessage::getSenderId, targetId)
+                    .eq(ChatMessage::getReceiverId, userId)
+                    .eq(ChatMessage::getRead, Boolean.FALSE)
+                    .set(ChatMessage::getRead, Boolean.TRUE));
+            String messagePrefix = idCompareUtil.idCompare(userId, targetId) + "_";
+            List<ChatMessage> records = chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
+                    .likeRight(ChatMessage::getId, messagePrefix)
+                    .orderByDesc(ChatMessage::getSendTime)
+                    .last("limit " + HISTORY_LIMIT));
+            List<MessageListVO> history = new ArrayList<>();
+            for (int i = records.size() - 1; i >= 0; i--) {
+                ChatMessage record = records.get(i);
+                MessageListVO messageListVO = new MessageListVO();
+                messageListVO.setId(record.getId());
+                messageListVO.setMessage(record.getMessage());
+                messageListVO.setSendTime(record.getSendTime());
+                messageListVO.setType(record.getMessageType() == ChatMessage.MessageType.IMAGE ? MessageListVO.MessageType.IMAGE : MessageListVO.MessageType.TEXT);
+                messageListVO.setSender(userId.equals(record.getSenderId()) ? MessageListVO.Sender.ME : MessageListVO.Sender.OPPOSITE);
+                history.add(messageListVO);
+            }
+            return history;
+        } catch (Exception e) {
+            return new ArrayList<>();
         }
-        return history;
     }
 
     @Override
@@ -96,5 +115,20 @@ public class ChatMessageServiceImpl implements IChatMessageService {
 
     private String buildMessageId(Long senderId, Long receiverId) {
         return idCompareUtil.idCompare(senderId, receiverId) + "_" + System.currentTimeMillis();
+    }
+
+    private ChatMessage.MessageType resolveMessageType(String typeText) {
+        if ("IMAGE".equalsIgnoreCase(typeText)) {
+            return ChatMessage.MessageType.IMAGE;
+        }
+        return ChatMessage.MessageType.TEXT;
+    }
+
+    private Long parseLongId(String idText) {
+        try {
+            return Long.valueOf(idText);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

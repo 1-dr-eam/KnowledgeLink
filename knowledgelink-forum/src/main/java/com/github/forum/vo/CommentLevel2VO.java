@@ -10,12 +10,12 @@ import lombok.Data;
  */
 @Data
 public class CommentLevel2VO {
-    private Long id;
-    private Long userId;
+    private String id;
+    private String userId;
     private String username;
     private String avatar;
-    private Long replyUserId;
-    private String replayName;
+    private String replyUserId;
+    private String replyUserName;
     private String content;
     private Boolean likeStatus;
     private Integer likeCount;

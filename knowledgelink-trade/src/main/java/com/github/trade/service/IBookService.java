@@ -1,6 +1,7 @@
 package com.github.trade.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.github.trade.dto.BatchIdRequest;
 import com.github.trade.dto.BookDTO;
 import com.github.common.dto.Result;
 import com.github.trade.dto.BookSearchDTO;
@@ -16,11 +17,15 @@ public interface IBookService extends IService<Book> {
 
     Result getBooksByConditions(BookSearchDTO bookSearchDTO);
 
+    Result getBookById(Long itemId);
+    Result getMyBooks();
+
     Result uploadBookInfo(BookDTO bookDTO);
 
     Result uploadBookAvatar(MultipartFile file);
 
     Result removeBookInfo(Long itemId);
+    Result removeBookInfoBatch(BatchIdRequest batchIdRequest);
 
     Result updateBookInfo(BookDTO bookDTO);
 }

@@ -1,8 +1,8 @@
 package com.github.trade.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
-
-import java.util.List;
 
 /**
  * @author ning
@@ -10,7 +10,9 @@ import java.util.List;
  */
 @Data
 public class BookDTO {
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long itemId;
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long sellerId;
     private String city;
     private String name;
@@ -25,5 +27,5 @@ public class BookDTO {
     private String description;
     private Integer count;
     private Integer status;
-    private List<String> image;
+    private String image;
 }

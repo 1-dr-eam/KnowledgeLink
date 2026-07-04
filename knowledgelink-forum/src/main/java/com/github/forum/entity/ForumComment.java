@@ -33,6 +33,9 @@ public class ForumComment {
     @TableField("reply_to_comment_id")
     // 回复的评论id 0表示不是回复评论
     private Long replyToCommentId;
+    // 回复的评论用户昵称 null表示不是回复评论
+    @TableField("reply_user_name")
+    private String replyUserName;
     private Integer status;
     private Integer likeCount;
     private String content;

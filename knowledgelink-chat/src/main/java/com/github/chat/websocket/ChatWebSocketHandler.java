@@ -14,8 +14,11 @@ import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * 聊天 WebSocket 消息处理器
@@ -26,7 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class ChatWebSocketHandler extends TextWebSocketHandler {
     private static final String USER_ID_ATTRIBUTE = "userId";
-    private static final Map<Long, WebSocketSession> ONLINE_USER_MAP = new ConcurrentHashMap<>();
+    private static final Map<Long, Set<WebSocketSession>> ONLINE_USER_MAP = new ConcurrentHashMap<>();
 
     @Autowired
     private IChatMessageService chatMessageService;
@@ -40,7 +43,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
      *
      * @return 在线用户会话映射
      */
-    public static Map<Long, WebSocketSession> getOnlineUserMap() {
+    public static Map<Long, Set<WebSocketSession>> getOnlineUserMap() {
         return ONLINE_USER_MAP;
     }
 
@@ -55,8 +58,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (userId == null) {
             return;
         }
-        ONLINE_USER_MAP.put(userId, session);
+        ONLINE_USER_MAP.computeIfAbsent(userId, ignored -> new CopyOnWriteArraySet<>()).add(session);
         chatUserListService.markUserOnline(userId);
+        broadcastOnlineStatus(userId, true);
     }
 
     /**
@@ -71,8 +75,15 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (userId == null) {
             return;
         }
-        ONLINE_USER_MAP.remove(userId);
-        chatUserListService.markUserOffline(userId);
+        Set<WebSocketSession> sessions = ONLINE_USER_MAP.get(userId);
+        if (sessions != null) {
+            sessions.remove(session);
+            if (sessions.isEmpty()) {
+                ONLINE_USER_MAP.remove(userId);
+                chatUserListService.markUserOffline(userId);
+                broadcastOnlineStatus(userId, false);
+            }
+        }
     }
 
     /**
@@ -89,24 +100,29 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         ChatMessageSendDTO sendMessageDTO = JSONUtil.toBean(message.getPayload(), ChatMessageSendDTO.class);
-        if (sendMessageDTO.getToUserId() == null || sendMessageDTO.getMessage() == null || sendMessageDTO.getMessage().isBlank()) {
+        Long toUserId = parseLongId(sendMessageDTO.getToUserId());
+        if (toUserId == null || sendMessageDTO.getMessage() == null || sendMessageDTO.getMessage().isBlank()) {
             return;
         }
         ChatMessage chatMessage = new ChatMessage();
-        chatMessage.setId(idCompareUtil.idCompare(fromUserId, sendMessageDTO.getToUserId()) + "_" + System.currentTimeMillis());
+        chatMessage.setId(idCompareUtil.idCompare(fromUserId, toUserId) + "_" + System.currentTimeMillis());
         chatMessage.setSenderId(fromUserId);
-        chatMessage.setReceiverId(sendMessageDTO.getToUserId());
+        chatMessage.setReceiverId(toUserId);
         chatMessage.setMessage(sendMessageDTO.getMessage());
         chatMessage.setSendTime(LocalDateTime.now());
         chatMessage.setRead(Boolean.FALSE);
-        chatMessage.setMessageType(ChatMessage.MessageType.TEXT);
+        chatMessage.setMessageType("IMAGE".equalsIgnoreCase(sendMessageDTO.getType()) ? ChatMessage.MessageType.IMAGE : ChatMessage.MessageType.TEXT);
         chatMessageService.saveMessage(chatMessage);
 
-        String response = JSONUtil.toJsonStr(chatMessage);
+        String response = JSONUtil.toJsonStr(toMessagePayload(chatMessage));
         session.sendMessage(new TextMessage(response));
-        WebSocketSession targetSession = ONLINE_USER_MAP.get(sendMessageDTO.getToUserId());
-        if (targetSession != null && targetSession.isOpen()) {
-            targetSession.sendMessage(new TextMessage(response));
+        Set<WebSocketSession> targetSessions = ONLINE_USER_MAP.get(toUserId);
+        if (targetSessions != null) {
+            for (WebSocketSession targetSession : targetSessions) {
+                if (targetSession != null && targetSession.isOpen()) {
+                    targetSession.sendMessage(new TextMessage(response));
+                }
+            }
         }
     }
 
@@ -120,5 +136,46 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             return null;
         }
         return userDTO.getId();
+    }
+
+    private Long parseLongId(String idText) {
+        try {
+            return Long.valueOf(idText);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void broadcastOnlineStatus(Long userId, boolean online) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("event", "ONLINE_STATUS");
+        payload.put("userId", String.valueOf(userId));
+        payload.put("online", online);
+        String text = JSONUtil.toJsonStr(payload);
+        ONLINE_USER_MAP.values().forEach(sessions -> {
+            if (sessions == null) {
+                return;
+            }
+            sessions.forEach(session -> {
+                if (session != null && session.isOpen()) {
+                    try {
+                        session.sendMessage(new TextMessage(text));
+                    } catch (Exception ignored) {
+                    }
+                }
+            });
+        });
+    }
+
+    private Map<String, Object> toMessagePayload(ChatMessage message) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", message.getId());
+        payload.put("senderId", String.valueOf(message.getSenderId()));
+        payload.put("receiverId", String.valueOf(message.getReceiverId()));
+        payload.put("messageType", message.getMessageType());
+        payload.put("message", message.getMessage());
+        payload.put("sendTime", message.getSendTime());
+        payload.put("read", message.getRead());
+        return payload;
     }
 }

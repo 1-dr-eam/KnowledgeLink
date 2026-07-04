@@ -1,21 +1,28 @@
 package com.github.forum.service;
 
 import com.github.common.dto.Result;
+import com.github.forum.dto.ForumUpsertDTO;
+import com.github.forum.dto.IdRequest;
+import com.github.forum.dto.SearchDTO;
+
+/**
+ * IForumPostService 服务接口
+ *
+ * @author ning
+ * @date 2026/03/24
+ */
 
 public interface IForumPostService {
-    Result insertPost(String title, String summary, String content, String coverAvatar, String label, String type, String visibleRange, String subject, String subClassify);
-    Result deletePost(Long id);
-    Result updatePost(Long id, String title, String summary, String content, String coverAvatar, String label, String type, String visibleRange, String subject, String subClassify);
-    Result getPostsByUserId();
-    Result getUserPostsById(Long userId, String collation, String searchKey);
-    Result getAllPosts(String keyword, String collation, String label, String classify);
-    Result getLoginUserPosts(String collation);
-    Result getLoginUserCollectPosts();
-    Result getPostInfoById(Long postId);
-    Result incPageViewsById(Long id);
-    Result getPostLabelById(Long id);
-    Result getPopularTopic();
-    Result getPostLabels();
-    Result getPostClassifies();
-    Result getTopicSimilarPosts(Long id, String subject, String subClassify);
+    Result addPost(ForumUpsertDTO forumUpsertDTO);
+    Result updatePost(IdRequest idRequest, ForumUpsertDTO forumUpsertDTO);
+    Result deletePost(IdRequest idRequest);
+    Result getPostById(IdRequest idRequest);
+    Result getPostsByUserId(String userId);
+    Result getMyCollectedPosts();
+    Result getPostDetailById(IdRequest idRequest);
+    Result searchPosts(SearchDTO searchDTO);
+    Result getRecommendedPosts(Integer limit);
+    Result getHotPosts(Integer limit);
+    Result getHotTopics(Integer limit);
+    Result getExcellentCreators(Integer limit);
 }

@@ -12,5 +12,6 @@ import java.util.List;
  */
 @Data
 public class BatchIdRequest {
-    private List<Long> ids;
+    private List<String> ids;
+    private String address;
 }

@@ -10,6 +10,6 @@ import lombok.Data;
  */
 @Data
 public class CartUpsertRequest {
-    private Long id;
+    private String id;
     private Integer count;
 }

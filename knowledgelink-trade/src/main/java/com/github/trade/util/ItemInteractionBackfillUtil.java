@@ -2,6 +2,7 @@ package com.github.trade.util;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.github.trade.entity.ItemInteraction;
+import com.github.trade.entity.UserItemInteraction;
 import com.github.trade.mapper.ItemInteractionMapper;
 import com.github.trade.mapper.UserItemInteractionMapper;
 import org.springframework.stereotype.Component;
@@ -23,7 +24,7 @@ public class ItemInteractionBackfillUtil {
     public void backfillLastThreeMonths() {
         LocalDateTime startTime = LocalDateTime.now().minusMonths(3);
         List<Map<String, Object>> aggregates = userItemInteractionMapper.selectMaps(
-                new QueryWrapper<>()
+                new QueryWrapper<UserItemInteraction>()
                         .select(
                                 "item_id as itemId",
                                 "sum(case when click = 1 then 1 else 0 end) as clickCount",
@@ -52,7 +53,7 @@ public class ItemInteractionBackfillUtil {
         }
         LocalDateTime startTime = LocalDateTime.now().minusMonths(3);
         Map<String, Object> aggregate = userItemInteractionMapper.selectMaps(
-                new QueryWrapper<>()
+                new QueryWrapper<UserItemInteraction>()
                         .select(
                                 "item_id as itemId",
                                 "sum(case when click = 1 then 1 else 0 end) as clickCount",
@@ -60,7 +61,7 @@ public class ItemInteractionBackfillUtil {
                                 "sum(case when buy = 1 then 1 else 0 end) as buyCount",
                                 "sum(case when forward = 1 then 1 else 0 end) as forwardCount")
                         .eq("item_id", itemId)
-                        .ge("date_time", startTime)
+                        .ge("create_time", startTime)
                         .groupBy("item_id")
         ).stream().findFirst().orElse(null);
         if (aggregate == null) {

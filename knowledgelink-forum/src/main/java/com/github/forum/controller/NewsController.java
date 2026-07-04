@@ -6,6 +6,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * NewsController 控制器
+ *
+ * @author ning
+ * @date 2026/03/24
+ */
+
 @RestController
 public class NewsController {
     @Autowired
